@@ -1,0 +1,16 @@
+[project]
+name = "opspilot"
+version = "0.1.0"
+description = "Event-driven multi-agent customer operations platform (Django + LangGraph + Kafka)"
+readme = "README.md"
+authors = [
+    { name = "Malik Kashif Abbas", email = "malikkashifabbas28@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "django>=5.2,<6.0",
+    "django-ninja>=1.4,<2",
+    "email-validator>=2.2",
+    "psycopg[binary]>=3.2",
+    "pydantic-settings>=2.6",
+]
