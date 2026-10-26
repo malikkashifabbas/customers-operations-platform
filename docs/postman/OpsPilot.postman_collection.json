@@ -1,0 +1,223 @@
+{
+  "info": {
+    "name": "OpsPilot API",
+    "_postman_id": "8f6d2a52-9a1c-4b8e-9f3e-0b7c5e1a4d21",
+    "description": "All OpsPilot REST APIs for frontend and service developers.\n\n**Setup:** import this collection and `OpsPilot.local.postman_environment.json`, select the *OpsPilot Local* environment, run `uv run src/manage.py seed_data` and `uv run src/manage.py runserver`.\n\n**Headers (temporary until JWT login):**\n- `X-Tenant-ID` = tenant (company) `public_id` — every API.\n- `X-Customer-ID` = customer `public_id` — chat APIs only. The customer must belong to that tenant, otherwise 401.\n\n**Response formats:**\n- Lists are paginated: `?limit=20&offset=0` → `{\"items\": [...], \"count\": 57}`.\n- Business errors: `{\"code\": \"CUSTOMER_ALREADY_EXISTS\", \"message\": \"...\"}` with 4xx/5xx status.\n- Auth errors: 401 `{\"detail\": \"Unauthorized\"}`.\n- Validation errors: 422 `{\"detail\": [{\"loc\": [...], \"msg\": \"...\"}]}`.\n- IDs in URLs and bodies are always `public_id` (UUID), never the internal numeric id.\n\nLive docs: `{{baseUrl}}/api/docs` (Swagger), OpenAPI JSON: `{{baseUrl}}/api/openapi.json`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Customers",
+      "description": "Customers of one tenant. Phone is unique per tenant.",
+      "item": [
+        {
+          "name": "List customers",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/?limit=20&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", ""],
+              "query": [
+                { "key": "limit", "value": "20" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "Newest first. Response: `{\"items\": [CustomerOut], \"count\": n}`.\n\nCustomerOut = `{public_id, full_name, phone, email, created_at}`."
+          }
+        },
+        {
+          "name": "Create customer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('newCustomerPublicId', pm.response.json().public_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Postman Test Customer\",\n  \"phone\": \"+92 300 555 0101\",\n  \"email\": \"postman.test@example.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", ""]
+            },
+            "description": "201 → CustomerOut (phone is normalised: spaces/dashes removed). The test script saves `public_id` into `newCustomerPublicId`.\n\n409 `CUSTOMER_ALREADY_EXISTS` if the phone already exists in this tenant. 422 if the email or name is invalid."
+          }
+        },
+        {
+          "name": "Get customer",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/{{newCustomerPublicId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "{{newCustomerPublicId}}"]
+            },
+            "description": "Run *Create customer* first (it fills `newCustomerPublicId`). 404 if the customer belongs to another tenant."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat (support agent)",
+      "description": "Talk to the AI support agent as a logged-in customer. The agent can only read that customer's own profile and orders.\n\n`conversation_id` (letters, digits, `-`, `_`) keeps memory between messages; send the same value to continue a chat, omit it to start a new one.",
+      "item": [
+        {
+          "name": "Send message (JSON)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('conversationId', pm.response.json().conversation_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+              { "key": "X-Customer-ID", "value": "{{customerId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"give me my orders\",\n  \"conversation_id\": \"{{conversationId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "messages"]
+            },
+            "description": "Waits for the full answer. Response:\n```json\n{\n  \"conversation_id\": \"postman-demo-1\",\n  \"reply\": \"Here are your recent orders: ...\",\n  \"tool_calls\": [{\"name\": \"list_my_orders\", \"args\": {}}],\n  \"llm_calls\": 2,\n  \"tokens\": 1366,\n  \"latency_ms\": 3780\n}\n```\n503 `ASSISTANT_UNAVAILABLE` if the LLM provider fails (rate limit, network)."
+          }
+        },
+        {
+          "name": "Send follow-up (same conversation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+              { "key": "X-Customer-ID", "value": "{{customerId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"which one failed and why?\",\n  \"conversation_id\": \"{{conversationId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "messages"]
+            },
+            "description": "Same `conversation_id` as the previous message, so the agent remembers the earlier answer (often no tool call needed)."
+          }
+        },
+        {
+          "name": "Stream message (SSE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+              { "key": "X-Customer-ID", "value": "{{customerId}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "text/event-stream" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"why did ORD-1002 fail?\",\n  \"conversation_id\": \"{{conversationId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/messages/stream",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "messages", "stream"]
+            },
+            "description": "Server-Sent Events (`text/event-stream`). Each event is `event: <type>` + `data: <json>` + blank line:\n\n| event | data | frontend action |\n|---|---|---|\n| `start` | `{conversation_id}` | save the id for the next message |\n| `tool_call` | `{name, args}` | show \"checking your orders...\" |\n| `tool_result` | `{name, content}` | optional (debug) |\n| `token` | `{text}` | append text to the chat bubble |\n| `done` | `{conversation_id, latency_ms}` | stop the typing indicator |\n| `error` | `{code, message}` | show the message |\n\nBrowser: use `fetch()` + `response.body.getReader()` (EventSource only supports GET)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Security checks",
+      "description": "Requests that must be rejected — useful to verify tenant isolation after changes.",
+      "item": [
+        {
+          "name": "Chat without X-Customer-ID (expect 401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"message\": \"hi\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/api/chat/messages", "host": ["{{baseUrl}}"], "path": ["api", "chat", "messages"] }
+          }
+        },
+        {
+          "name": "Customer from another tenant (expect 401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{otherTenantId}}" },
+              { "key": "X-Customer-ID", "value": "{{customerId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"message\": \"my orders\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/api/chat/messages", "host": ["{{baseUrl}}"], "path": ["api", "chat", "messages"] },
+            "description": "Demo Company's customer sent with NimbusTech's tenant id."
+          }
+        },
+        {
+          "name": "Invalid conversation_id (expect 422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+              { "key": "X-Customer-ID", "value": "{{customerId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"message\": \"hi\",\n  \"conversation_id\": \"x:y\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/api/chat/messages", "host": ["{{baseUrl}}"], "path": ["api", "chat", "messages"] }
+          }
+        },
+        {
+          "name": "List customers without X-Tenant-ID (expect 401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/customers/", "host": ["{{baseUrl}}"], "path": ["api", "customers", ""] }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "conversationId", "value": "postman-demo-1" },
+    { "key": "newCustomerPublicId", "value": "" }
+  ]
+}

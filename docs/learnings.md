@@ -672,3 +672,50 @@ uv run python playground/chat_support.py --customer sara@example.com            
 uv run python playground/chat_support.py --tenant nimbustech                        # Ali @ NimbusTech
 uv run python playground/chat_support.py --thread orders-1                          # Postgres memory
 ```
+
+---
+
+## Learning 13 ⭐: Agent ↔ Django API, live streaming (SSE), Postman collection
+
+**Date:** 26 Oct 2026 · **Lesson:** 10 · **Files:** `src/apps/chat/` (auth, schemas, services, api, exceptions), `agents/core/checkpointers.py::get_pool_checkpointer`, `playground/stream_client.py`, `docs/postman/`
+
+### Do endpoints
+| Endpoint | Kab | Jawab |
+|---|---|---|
+| `POST /api/chat/messages` | Doosri services, poora jawab ek saath | JSON `{conversation_id, reply, tool_calls, llm_calls, tokens, latency_ms}` |
+| `POST /api/chat/messages/stream` | Chat screen | **SSE** events: `start` → `tool_call` → `tool_result` → `token`… → `done` (ya `error`) |
+
+### SSE (Server-Sent Events)
+- Ek HTTP connection khula, server events bhejta rehta hai: `event: token` + `data: {"text": " card"}` + khali line.
+- **Ek-tarfa** (server → client), saada HTTP — WebSocket (do-tarfa) ki zaroorat nahi.
+- Django: `StreamingHttpResponse(generator, content_type="text/event-stream")` + `Cache-Control: no-cache` + `X-Accel-Buffering: no` (proxy buffering band).
+- LangGraph: `graph.stream(..., stream_mode=["messages", "updates"])` → `("messages", (chunk, metadata))` = LLM ke **tokens** (sirf `langgraph_node == "agent"`), `("updates", {...})` = tool call / tool result.
+- Browser mein `EventSource` sirf GET karta hai → POST stream ke liye `fetch()` + `response.body.getReader()`; curl mein `-N` (buffering band).
+
+### Pehchaan aur hifazat
+- `CustomerHeaders`: `X-Tenant-ID` + `X-Customer-ID` dono — customer **usi tenant** ka hona chahiye, warna 401. `request.auth` = `CustomerPrincipal(tenant, customer)`. (Arzi; JWT lesson mein token se.)
+- Ninja auth sirf ek header document karta hai → doosra header `openapi_extra` se Swagger mein daala.
+- **`thread_id = tenant:customer:conversation_id`** — Sara ne Ali ki `conversation_id` bheji to bhi **naya khali thread** khula (test 3).
+- `conversation_id` sirf `[A-Za-z0-9_-]` (Pydantic `pattern`) — `:` daal kar thread id se khelna band (422).
+- LLM fail → `AssistantUnavailable` (503, code `ASSISTANT_UNAVAILABLE`); stream mein `error` event.
+
+### Connection pool
+API par har request naya DB connection kholna mehenga → `get_pool_checkpointer()`: `psycopg_pool.ConnectionPool` (1–10 connections) + `PostgresSaver(pool)`, `@lru_cache` se **ek hi dafa** banta hai; graph bhi `@lru_cache` se ek dafa.
+
+### Tests (26 Oct 2026)
+| # | Test | Natija |
+|---|---|---|
+| 1 | JSON: Ali "give me my orders" | 200, 3 orders, 1 tool, 2 LLM calls, 1366 tokens, 3.8s |
+| 2 | Same conversation: "which one failed and why?" | 200, **koi tool nahi** (yaadasht se), 1.1s |
+| 3 | Sara + Ali ki `conversation_id` | "You haven't asked any question yet" — Ali ki baat-cheet nahi khuli ✅ |
+| 4 | Sara ka customer id + NimbusTech tenant | **401** ✅ |
+| 5 | `X-Customer-ID` ke bagair | **401** ✅ |
+| 6 | `conversation_id = "x:y"` | **422** ✅ |
+| 7 | curl SSE | `start` → `tool_call get_my_order(ORD-1002)` → `tool_result` → tokens lafz ba lafz → `done` (2.1s) |
+| 8 | `stream_client.py` | frontend jaisa live text |
+| 9 | `/api/openapi.json` | `X-Customer-ID` documented ✅ |
+
+### Postman — `docs/postman/`
+- `OpsPilot.postman_collection.json` (Customers, Chat, Security checks) + `OpsPilot.local.postman_environment.json` (baseUrl + demo ids).
+- Test scripts khud variables bharte hain: *Create customer* → `newCustomerPublicId`, *Send message* → `conversationId`.
+- **Usool: har nayi/badli API isi change mein collection mein bhi.** OpenAPI JSON (`/api/openapi.json`) bhi Postman mein import ho sakta hai.

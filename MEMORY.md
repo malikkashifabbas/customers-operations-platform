@@ -4,7 +4,7 @@
 > Ye project ki permanent history hai — kya bana, kyun bana, kahan hai, aur agla qadam kya hai.
 > **Har lesson mukammal hone par is file ko update karna lazmi hai** (neeche "Lesson log" aur "Current state").
 
-**Last updated:** 26 Oct 2026 — after Lesson 9 (orders app, ~160 seed orders, support agent ke tools asli DB se, runtime context, prompt v2, eval script). Lessons 8 + 9 abhi uncommitted.
+**Last updated:** 26 Oct 2026 — after Lesson 10 (chat API: JSON + SSE streaming, customer headers auth, pool checkpointer, Postman collection). Lesson 10 abhi uncommitted.
 
 ---
 
@@ -22,8 +22,9 @@
 2. **`docs/learnings.md`:** har nayi seekhi hui cheez "Learning N" ban kar wahan jati hai (kya, kyun, kaise check karein).
 3. **`MEMORY.md` (ye file):** har lesson ke baad update — Lesson log + Current state + Next steps.
 4. **Commit aur push user KHUD karta hai** (26 Oct 2026 se). Har lesson ke baad AI sirf commands (`git add`, `git commit -m "..."`, `git push`) + commit message deta hai, aur pehle secrets scan karta hai. Commit author: `Malik Kashif Abbas <malikkashifabbas28@gmail.com>` (repo-local git config).
-5. **Public repo:** har push se pehle passwords/secrets scan karo. `.env` gitignored hai — kabhi commit nahi. Docs mein asli password kabhi mat likho.
-6. Code comments: **ek line** max, sirf "kyun" — code ko dohrao mat.
+5. **Postman:** har nayi ya badli API isi change mein `docs/postman/OpsPilot.postman_collection.json` mein bhi (headers, example body, response note); naye ids environment file mein.
+6. **Public repo:** har push se pehle passwords/secrets scan karo. `.env` gitignored hai — kabhi commit nahi. Docs mein asli password kabhi mat likho.
+7. Code comments: **ek line** max, sirf "kyun" — code ko dohrao mat.
 
 ## 3. Stack aur faisle (ADR-style)
 
@@ -50,7 +51,9 @@
 | Python | 3.12.15 (uv-managed; system par 3.14 bhi hai) |
 | Django server | `uv run src/manage.py runserver` → http://127.0.0.1:8000 |
 | Admin | http://127.0.0.1:8000/admin/ (superuser `kashif`) |
-| API docs (Swagger) | http://127.0.0.1:8000/api/docs → Authorize → `X-Tenant-ID` |
+| API docs (Swagger) | http://127.0.0.1:8000/api/docs → Authorize → `X-Tenant-ID` (chat routes par `X-Customer-ID` field bhi) |
+| Postman | `docs/postman/` — collection + *OpsPilot Local* environment (demo tenant/customer ids) |
+| Chat API | `POST /api/chat/messages` (JSON) aur `/api/chat/messages/stream` (SSE); headers `X-Tenant-ID` + `X-Customer-ID`; body `{message, conversation_id?}`. Terminal client: `uv run python playground/stream_client.py "my orders"` |
 | Postgres (Docker) | `localhost:5433` (5432 par user ka native Windows Postgres hai), DB/user `opspilot`, password `.env` mein |
 | Redis | `localhost:6379` |
 | Kafka | Windows se `localhost:9092`, Docker network ke andar `kafka:19092` |
@@ -117,6 +120,7 @@ opspilot/
 | 5 | customers app | Pehli API (Ninja), tenant guard, DomainError, unique phone per tenant; 10 tests pass incl. tenant isolation | L6, L7 |
 | — | Git | Commit `7a92e22` pushed to GitHub (Lessons 1–5) | — |
 | — | Project memory | `MEMORY.md` + `CLAUDE.md` banaye; commit `69ee763` pushed | — |
+| 10 | Chat API + SSE | **`apps/chat`** (no models): `CustomerHeaders` auth (tenant + customer, cross-tenant 401), `ChatIn` (`conversation_id` pattern), `services.run_chat` / `stream_chat` (`stream_mode=["messages","updates"]` → SSE start/tool_call/tool_result/token/done/error), `AssistantUnavailable` 503; `get_pool_checkpointer()` (psycopg pool, lru_cache); thread_id = tenant:customer:conversation; **`docs/postman/`** collection + environment; 9 tests pass | L13 ⭐ |
 | 9 | Agent ↔ asli DB | **`apps/orders`** (Order, Decimal amount, TextChoices status, UNIQUE per tenant, `create_order` tenant check, selectors tenant+customer); **`devtools` app** `seed_data` (160 orders); **`agents/domains/support/`** (`SupportContext` via runtime context, `ToolRuntime` tools: get_my_profile / list_my_orders / get_my_order — koi pehchaan wala argument nahi; prompts v1 → **v2**; `agents/core/prompts.py`); eval: v2 ne Roman Urdu + jhoota "forward" wada theek kiya; "Sara ke orders" par ab bhi apne orders dikhata hai (leak nahi) → guardrail chahiye; avg latency 1.9–3.6s | L12 ⭐ |
 | 8 | Checkpointer | `langgraph-checkpoint-postgres 3.2.0`; **`src/agents/core/checkpointers.py`** (`postgres_url` with `quote`, `postgres_checkpointer` context manager + `setup()`); 8A InMemory (ali-1 yaad, sara-1 alag; 8 checkpoints); `chat_agent.py --thread` Postgres — naye process mein bhi yaad; ⚠️ agent ne "we can unlock it" wada kiya (koi tool nahi) | L10 ⭐ |
 | 7 | LLM + tools | `langchain 1.4.7`, `langchain-groq 1.1.3`; `config/env.py` LLM fields (optional key, `AliasChoices`); **`src/infra/llm/gateway.py`** (`get_chat_model`); 7A LLM classify (structured output) — "account locked" ab `tech+high`; 7B ReAct agent (`@tool`, `bind_tools`, `ToolNode`, `tools_condition`, loop) — 2 tools ek ke baad ek; ⚠️ office hours **hallucinate** kiye | L9 ⭐ |
@@ -128,11 +132,12 @@ opspilot/
 - ✅ LangGraph + LLM (Groq) chal rahe hain; `infra/llm/gateway.py` bana. Playground mein: ticket triage graph (L6), LLM classify (7A), ReAct tool agent (7B), memory demo (8A), chat with Postgres memory.
 - ✅ `src/agents/`: `core/checkpointers.py`, `core/prompts.py`, aur pehla domain agent **`domains/support/`** — tools **asli DB** (orders + customer) par, tenant + customer ke andar band.
 - ✅ `apps/orders` + `devtools` (seed_data). Orders ki REST API abhi nahi bani.
+- ✅ **Chat API** (`apps/chat`): JSON + SSE streaming, Postgres memory via connection pool, Postman collection.
 - ⚠️ "Doosre customer ka data" maangne par agent chupchaap apna data dikhata hai (leak nahi) — guardrail lesson mein theek hoga. LLM totals khud jorta hai — aage DB `SUM()` wala tool.
 - ⚠️ Auth abhi **arzi** hai (`X-Tenant-ID` header) — JWT lesson mein badlega.
 - ⚠️ Agent jo nahi jaanta wo ghadh leta hai (office hours) — guardrails + RAG ki zaroorat.
 - ❌ Abhi tak nahi: Redis checkpointer, Kafka producer/consumer code, Redis code, tests folder, ruff/mypy, CI.
-- Git: pushed — `7a92e22` (Lessons 1–5), `69ee763` (MEMORY.md + CLAUDE.md), `3926d6d` (Lesson 6), `3440413` (Lesson 7). **Uncommitted:** Lessons 8 + 9 (+ Learning 11). User khud commit/push karta hai.
+- Git: pushed — `7a92e22` (Lessons 1–5), `69ee763` (MEMORY.md + CLAUDE.md), `3926d6d` (Lesson 6), `3440413` (Lesson 7), `c134dd1` (Lessons 8–9; message mein galti se quotes + `-m` aa gaye — pushed hai, isliye chhor diya, force push nahi). **Uncommitted:** Lesson 10. User **SourceTree** se khud commit/push karta hai — commit message SourceTree ke liye do: pehli line title, khali line, phir tafseel (bina quotes/`-m`).
 - `playground/` = seekhne ki files (git mein, magar project ka hissa nahi); asal code `src/` mein.
 
 ## 8. Next steps (roadmap)
@@ -143,8 +148,8 @@ opspilot/
 | ~~7~~ | ✅ LLM + tools + ReAct agent — ho gaya (26 Oct 2026) |
 | ~~8~~ | ✅ Checkpointer (InMemory + Postgres) — ho gaya (26 Oct 2026) |
 | ~~9~~ | ✅ Orders app + agent tools ↔ asli DB + prompt v2 + eval — ho gaya (26 Oct 2026) |
-| **10** | **Graph ↔ Django API + live streaming (SSE)**: `POST /api/support/chat` (tenant + customer token se), `stream_mode` updates/messages |
-| 11 | Kafka (ticket event → agent worker) + **Redis** (idempotency, locks, pub/sub, chat memory TTL = purana 8C) |
+| ~~10~~ | ✅ Chat API (JSON + SSE) + Postman — ho gaya (26 Oct 2026) |
+| **11** | Kafka (ticket event → agent worker) + **Redis** (idempotency, locks, pub/sub, chat memory TTL = purana 8C) |
 | — | Guardrail node (doosre customer ka data / prompt injection), `get_my_spending_summary` (DB `SUM`), orders REST API |
 | 10+ | Kafka outbox + consumer, interrupt approvals, subgraphs/Send/Command (supervisor), RAG (pgvector), Text-to-SQL, evals (LangSmith), JWT auth, tests, CI |
 

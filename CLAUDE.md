@@ -11,7 +11,8 @@ Guidance for Claude Code (and any AI or developer) working in this repository.
 
 1. Update `MEMORY.md`: "Last updated" line, **Lesson log**, **Current state**, **Next steps**, and the folder map / environment facts if they changed.
 2. Add the new concepts to `docs/learnings.md` as the next "Learning N".
-3. Do not commit or push unless the user asks; push from the user's terminal. Scan for secrets first — this repo is public and `.env` must never be committed.
+3. Every new or changed API goes into `docs/postman/OpsPilot.postman_collection.json` in the same change (headers, example body, response notes).
+4. The user commits and pushes himself (SourceTree). Scan for secrets first — this repo is public and `.env` must never be committed — then give a commit message: title line, blank line, description (no quotes, no `-m`).
 
 ## How to work with the user
 

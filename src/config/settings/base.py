@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'core',
     'apps.customers',
     'apps.orders',
+    'apps.chat',
     'devtools',
 ]
 
