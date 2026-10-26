@@ -468,3 +468,74 @@ START ──► [classify] ──► [set_priority] ──┬──► [billing_
 
 ### ⚠️ Gotcha: LangGraph node ki type hint bhi parhta hai
 Node function `def classify(state: TicketState)` ki hint se LangGraph us node ka **input schema** banata hai. Ek hi `steps` field do alag types (reducer ke saath aur bagair) mein aaye to: `ValueError: Channel 'steps' already exists with a different type`. Har graph ke nodes ki hints usi graph ki state se milni chahiyein.
+
+---
+
+## Learning 9 ⭐: Graph mein LLM, structured output, tools aur ReAct agent
+
+**Date:** 26 Oct 2026 · **Lesson:** 7 · **Files:** `src/infra/llm/gateway.py`, `playground/lesson07a_llm_classify.py`, `playground/lesson07b_tool_agent.py` · **Diagram:** `docs/graphs/lesson07b_tool_agent.md`
+
+### LLM provider: Groq Cloud (free)
+- **Groq** (q) = cloud jo open models tez chalata hai, free tier bina card. **Grok** (k) = xAI ka model, alag cheez.
+- Model: `groq:openai/gpt-oss-120b` (achhi tool calling). Free hadd (model ke hisaab se, account ke Limits page par dekho) ≈ 30 req/min, 1,000 req/din, 200,000 tokens/din — ek agent run ≈ 2–4 hazaar tokens.
+- Free tier par **asli customer data kabhi nahi**.
+
+### LLM gateway — `src/infra/llm/gateway.py` (project ka pehla `infra/` hissa)
+- `get_chat_model()` — har agent yahi bulata hai; `init_chat_model("groq:...")` provider dekh kar sahi class (`ChatGroq`) banata hai. Provider badalna = `.env` mein `LLM_MODEL` ki ek line.
+- `temperature=0` — har dafa ek jaisa, soch samajh kar jawab (classification/support ke liye).
+- Key na ho to `LLMNotConfigured` — saaf error.
+- **`config/env.py`:** `llm_api_key: SecretStr | None` — **optional**, taa ke key na ho to bhi `migrate`/`runserver` chalein (ek feature ki kami poori app na giraye). `AliasChoices("LLM_API_KEY", "GROQ_API_KEY")` — dono naam chalte hain (meri `.env` mein `Groq_Api_Key` hai; case-insensitive).
+- ⚠️ pydantic-settings `.env` parhta hai, magar provider SDKs `os.environ` dekhte hain → key `api_key=` se **khud** pass ki.
+
+### Messages
+| Message | Kaun | Misaal |
+|---|---|---|
+| `SystemMessage` | Developer ki hidayat | "You are OpsPilot's support agent..." |
+| `HumanMessage` | Customer | "I paid for ORD-1002 but it shows unpaid" |
+| `AIMessage` | LLM | text jawab **ya** tool call `get_order_status(order_id="ORD-1002")` |
+| `ToolMessage` | Tool ka nateeja | "unpaid, payment failed (card declined)" |
+
+### 7A — Structured output
+`get_chat_model().with_structured_output(Classification)` → LLM **majboor** ke Pydantic shakal mein jawab de; seedha `result.category`. `Field(description=...)` **LLM ko dikhti hai** — yahi asal hidayat hai ("tech = errors, login, account access").
+
+| Ticket | Lesson 6 (keywords) | Lesson 7A (LLM) |
+|---|---|---|
+| "My account is locked, urgent!" | ❌ general | ✅ **tech + high** — "account is locked and urgent, indicating blocked access" |
+| "I was charged twice for my subscription" | billing | ✅ billing + normal |
+| "Do you have a dark mode?" | general | ✅ general + normal |
+
+### 7B — Tools aur ReAct loop
+```
+START ──► [agent] ──tool call?──► [tools] ──► (wapas agent)
+              └──── nahi ──► END
+```
+- `@tool` → LLM ko **naam + docstring + parameters** dikhte hain. **Docstring = LLM ki hidayat** ke tool kab chalana hai.
+- `llm.bind_tools(TOOLS)` — LLM ko tools ki list; LLM tool **khud nahi chalata**, sirf call deta hai.
+- `ToolNode(TOOLS)` — call parh kar function chalata hai, `ToolMessage` likhta hai.
+- `tools_condition` — aakhri AIMessage mein tool call → `"tools"`, warna END.
+- `add_edge("tools", "agent")` — **loop**: nateeja dekh kar agent phir sochta hai (ek se zyada tools bhi).
+- `MessagesState` — tayyar state, `messages` + `add_messages` reducer (naya message jud jata hai).
+- **ReAct = Reason + Act.** Yahi OpsPilot ke har domain agent (billing, tech) ka dhaancha hoga.
+
+### Khud chala kar dekha (26 Oct 2026)
+| Sawal | Kya hua |
+|---|---|
+| "Paid ORD-1002 but shows unpaid" | 1 tool call `get_order_status(ORD-1002)` → "card declined" → sahi jawab, kuch ghadha nahi ✅ |
+| "Can't log in, ali@example.com, also check ORD-1001" | **2 tool calls ek ke baad ek** (`get_account_status` → `get_order_status`) → dono baatein ek jawab mein ✅ — loop ka saboot |
+| "What are your office hours?" | ⚠️ **Koi tool nahi, aur agent ne "Mon–Fri 9am–6pm EST" khud GHADH diya** (hallucination). Prompt sirf "order/account details mat ghadho" kehta tha. Sabaq: LLM jo nahi jaanta wo bana leta hai → **guardrails + knowledge tool (RAG, aage)** chahiye; prompt mein "jo tools se na mile, kaho mujhe pata nahi" |
+| Test call `invoke("Reply with exactly: pong")` | `pong`, 121 tokens (35 "reasoning" tokens — gpt-oss andar sochta hai) |
+
+### Terminal mein agent se chat — `playground/chat_agent.py`
+```bash
+uv run python playground/chat_agent.py     # 'new' = nayi chat, 'exit' = band
+```
+- Har sawal par **poori pichli history + naya sawal** graph ko diya jata hai, isliye follow-up ("what about my **other** order ORD-1001?") samajh aata hai.
+- `new` ke baad history khali → agent: "I don't have any record of a previous question" — **memory sirf wahi hai jo hum usay dete hain**; LLM khud kuch yaad nahi rakhta.
+- Abhi history hum **khud** Python list mein sambhal rahe hain. Lesson 8 mein **checkpointer** + `thread_id` ye kaam khud karega (aur server restart ke baad bhi yaad rakhega).
+
+### Meri apni chat se sabaq: "agent sirf wahi kar sakta hai jo tools allow karein"
+Maine poocha "give me all my orders, kaun complete kaun nahi". Agent ne IDs maangi, phir email; `ali@example.com` diya to sirf account status bataya, orders ki list nahi di; "mujhe email nahi pata" kaha to mana kar diya.
+- **Wajah:** sirf 2 tools the — order **ID** se status, aur **email** se account status. "Is customer ke saare orders" wala tool **tha hi nahi** — agent wo kaam kar hi nahi sakta tha.
+- **Achhi baat:** usne orders **ghadhe nahi** (office hours ke ulat), aur bina pehchaan ke data dene se **inkaar** kiya — sahi security rawaiya.
+- **Asal OpsPilot mein:** customer ticket ke saath hi pehchana hota hai (tenant + customer, login/token se) — agent ko email poochne ki zaroorat nahi. Tool hoga `list_orders_for_customer()` jo **request ke customer aur tenant tak band** ho; customer ID LLM se nahi, system se aaye (warna koi "mujhe kisi aur ke orders dikhao" keh sakta hai).
+- **Tool design = agent ki salahiyat + hifazat.** Kaun se tools, kis input ke saath, kis data tak — yahi tay karta hai agent kya kar sakta hai aur kya nahi.

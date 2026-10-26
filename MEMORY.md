@@ -4,7 +4,7 @@
 > Ye project ki permanent history hai — kya bana, kyun bana, kahan hai, aur agla qadam kya hai.
 > **Har lesson mukammal hone par is file ko update karna lazmi hai** (neeche "Lesson log" aur "Current state").
 
-**Last updated:** 26 Oct 2026 — after Lesson 6 (LangGraph bunyaad: state, node, edge, reducer). Lesson 6 abhi uncommitted.
+**Last updated:** 26 Oct 2026 — after Lesson 7 (LLM + tools: Groq gateway, structured output, ReAct agent). Lesson 7 abhi uncommitted.
 
 ---
 
@@ -38,6 +38,7 @@
 | Multi-tenancy | **Har row par `tenant_id`**, har query tenant filter | Ek company doosri ka data na dekh sake (Learning 5 ⭐) |
 | IDs | `id` BigInt (andar) + `public_id` UUID (bahar) | Enumeration attack se bachao |
 | LangGraph | **Sirf Graph API** (Functional API nahi) | Client ko graph diagram (Mermaid text) docs mein chahiye |
+| LLM | **Groq Cloud free tier**, `groq:openai/gpt-oss-120b`, sirf `infra/llm/gateway.py` ke zariye | Free, tez, achhi tool calling; provider badalna = `.env` ki ek line |
 | Events | **Kafka 4 (KRaft)**, auto-create topics **off** | Hypernim ka stack; topics jaan boojh kar banein |
 | Temporary memory | **Redis 8** | Chat memory (TTL), cache, locks, idempotency, pub/sub |
 | Business logic | Sirf `services/` (likhna) aur `selectors.py` (parhna) | Ek rule ek jagah — API ho ya AI agent |
@@ -54,6 +55,8 @@
 | Redis | `localhost:6379` |
 | Kafka | Windows se `localhost:9092`, Docker network ke andar `kafka:19092` |
 | Kafka UI | http://localhost:8080 |
+| LLM | `.env`: `Groq_Api_Key` (ya `LLM_API_KEY`), optional `LLM_MODEL` (default `groq:openai/gpt-oss-120b`). Playground scripts `src/` ko khud `sys.path` mein daalte hain |
+| Agent se terminal mein chat | `uv run python playground/chat_agent.py` (`new` = nayi chat, `exit` = band) — history khud list mein rakhi hai (Lesson 8 mein checkpointer ye kaam karega) |
 | Dev tenants | Demo Company `ac5b565b-f62b-4806-bb6a-9c9e1037226b`, NimbusTech `41832ee0-a2c3-4869-babe-49606dafa97f` |
 
 **Gotchas jo ho chuke hain:**
@@ -110,15 +113,17 @@ opspilot/
 | 5 | customers app | Pehli API (Ninja), tenant guard, DomainError, unique phone per tenant; 10 tests pass incl. tenant isolation | L6, L7 |
 | — | Git | Commit `7a92e22` pushed to GitHub (Lessons 1–5) | — |
 | — | Project memory | `MEMORY.md` + `CLAUDE.md` banaye; commit `69ee763` pushed | — |
+| 7 | LLM + tools | `langchain 1.4.7`, `langchain-groq 1.1.3`; `config/env.py` LLM fields (optional key, `AliasChoices`); **`src/infra/llm/gateway.py`** (`get_chat_model`); 7A LLM classify (structured output) — "account locked" ab `tech+high`; 7B ReAct agent (`@tool`, `bind_tools`, `ToolNode`, `tools_condition`, loop) — 2 tools ek ke baad ek; ⚠️ office hours **hallucinate** kiye | L9 ⭐ |
 | 6 | LangGraph bunyaad | `langgraph 1.2.17` installed; `playground/lesson06_first_graph.py` (ticket triage: classify → set_priority → conditional → 3 reply nodes); reducer, invoke, stream, Mermaid → `docs/graphs/lesson06_ticket_triage.md`; 3 tajurbe (path map ke bagair **khamosh bug**) | L8 ⭐ |
 
 ## 7. Current state
 
 - ✅ Infra (Docker), Django + Postgres, tenants, customers API — sab chal raha hai.
-- ✅ LangGraph installed; pehla graph (bina LLM) `playground/` mein chal raha hai. Asal agents abhi `src/agents/` mein nahi bane.
+- ✅ LangGraph + LLM (Groq) chal rahe hain; `infra/llm/gateway.py` bana. Playground mein: ticket triage graph (L6), LLM classify (7A), ReAct tool agent (7B). Asal agents abhi `src/agents/` mein nahi bane; tools abhi nakli data (`FAKE_ORDERS`) par.
 - ⚠️ Auth abhi **arzi** hai (`X-Tenant-ID` header) — JWT lesson mein badlega.
-- ❌ Abhi tak nahi: LLM (API key chahiye hogi), checkpointer, Kafka producer/consumer code, Redis code, tests folder, ruff/mypy, CI.
-- Git: pushed — `7a92e22` (Lessons 1–5), `69ee763` (MEMORY.md + CLAUDE.md). **Uncommitted:** Lesson 6 (`playground/`, `docs/graphs/`, learnings L8, `pyproject.toml`/`uv.lock` mein langgraph, MEMORY.md).
+- ⚠️ Agent jo nahi jaanta wo ghadh leta hai (office hours) — guardrails + RAG ki zaroorat.
+- ❌ Abhi tak nahi: checkpointer/memory, Kafka producer/consumer code, Redis code, tests folder, ruff/mypy, CI.
+- Git: pushed — `7a92e22` (Lessons 1–5), `69ee763` (MEMORY.md + CLAUDE.md), Lesson 6 (user ne khud push kiya). **Uncommitted:** Lesson 7.
 - `playground/` = seekhne ki files (git mein, magar project ka hissa nahi); asal code `src/` mein.
 
 ## 8. Next steps (roadmap)
@@ -126,8 +131,8 @@ opspilot/
 | Lesson | Topic |
 |---|---|
 | ~~6~~ | ✅ LangGraph ki bunyaad — ho gaya (26 Oct 2026) |
-| **7** | **Graph mein LLM** (classify node keyword ki jagah LLM + structured output), **tools** (ToolNode), `messages` + `add_messages` reducer, conditional edge "tool chahiye?" — LLM provider/API key ka faisla pehle |
-| 8 | Checkpointer (Redis + Postgres), `thread_id`, memory |
+| ~~7~~ | ✅ LLM + tools + ReAct agent — ho gaya (26 Oct 2026) |
+| **8** | **Checkpointer** (pehle `InMemorySaver`, phir Redis + Postgres), `thread_id`, multi-turn memory ("mera pichla order?"), `get_state` / time travel ki jhalak |
 | 9 | Graph ↔ Django + SSE streaming |
 | 10+ | Kafka outbox + consumer, interrupt approvals, subgraphs/Send/Command (supervisor), RAG (pgvector), Text-to-SQL, evals (LangSmith), JWT auth, tests, CI |
 

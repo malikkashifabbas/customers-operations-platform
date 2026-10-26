@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -16,6 +16,10 @@ class Env(BaseSettings):
     postgres_password: SecretStr
     postgres_host: str = "localhost"
     postgres_port: int = 5433
+
+    llm_model: str = "groq:openai/gpt-oss-120b"
+    # Optional so Django still starts without a key; accepts the generic or the provider-specific name.
+    llm_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("LLM_API_KEY", "GROQ_API_KEY"))
 
 
 env = Env()
