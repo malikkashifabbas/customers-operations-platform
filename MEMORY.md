@@ -4,7 +4,7 @@
 > Ye project ki permanent history hai — kya bana, kyun bana, kahan hai, aur agla qadam kya hai.
 > **Har lesson mukammal hone par is file ko update karna lazmi hai** (neeche "Lesson log" aur "Current state").
 
-**Last updated:** 26 Oct 2026 — after Lesson 7 (LLM + tools: Groq gateway, structured output, ReAct agent). Lesson 7 abhi uncommitted.
+**Last updated:** 26 Oct 2026 — after Lesson 9 (orders app, ~160 seed orders, support agent ke tools asli DB se, runtime context, prompt v2, eval script). Lessons 8 + 9 abhi uncommitted.
 
 ---
 
@@ -56,7 +56,11 @@
 | Kafka | Windows se `localhost:9092`, Docker network ke andar `kafka:19092` |
 | Kafka UI | http://localhost:8080 |
 | LLM | `.env`: `Groq_Api_Key` (ya `LLM_API_KEY`), optional `LLM_MODEL` (default `groq:openai/gpt-oss-120b`). Playground scripts `src/` ko khud `sys.path` mein daalte hain |
-| Agent se terminal mein chat | `uv run python playground/chat_agent.py` (`new` = nayi chat, `exit` = band) — history khud list mein rakhi hai (Lesson 8 mein checkpointer ye kaam karega) |
+| Agent se terminal mein chat | `uv run python playground/chat_agent.py` (RAM) ya `... --thread ali-1` (Postgres, restart ke baad yaad). `new` = naya thread, `state` = saved memory, `exit` = band |
+| Test data | `uv run src/manage.py seed_data` → 2 tenants, 43 customers, **160 orders** (Demo 108, NimbusTech 52); dobara chalana safe. Ali `+923001234567` (ORD-1001 paid, ORD-1002 failed "Card declined by bank", ORD-1003 pending), Sara `sara@example.com` (ORD-2001 refunded, ORD-2002 paid), NimbusTech Ali ORD-1001 = $999 |
+| Asli agent se chat | `uv run python playground/chat_support.py [--tenant nimbustech] [--customer sara@example.com] [--thread name]` — har jawab ke saath waqt + LLM calls + tokens |
+| Agent eval | `uv run python playground/lesson09_eval.py` — 10 fixed sawal, latency/tokens/tools |
+| LangGraph tables | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations` — `PostgresSaver.setup()` banata hai, **Django migrations nahi**. Test threads: `demo-ali`, `demo-sara` |
 | Dev tenants | Demo Company `ac5b565b-f62b-4806-bb6a-9c9e1037226b`, NimbusTech `41832ee0-a2c3-4869-babe-49606dafa97f` |
 
 **Gotchas jo ho chuke hain:**
@@ -113,17 +117,22 @@ opspilot/
 | 5 | customers app | Pehli API (Ninja), tenant guard, DomainError, unique phone per tenant; 10 tests pass incl. tenant isolation | L6, L7 |
 | — | Git | Commit `7a92e22` pushed to GitHub (Lessons 1–5) | — |
 | — | Project memory | `MEMORY.md` + `CLAUDE.md` banaye; commit `69ee763` pushed | — |
+| 9 | Agent ↔ asli DB | **`apps/orders`** (Order, Decimal amount, TextChoices status, UNIQUE per tenant, `create_order` tenant check, selectors tenant+customer); **`devtools` app** `seed_data` (160 orders); **`agents/domains/support/`** (`SupportContext` via runtime context, `ToolRuntime` tools: get_my_profile / list_my_orders / get_my_order — koi pehchaan wala argument nahi; prompts v1 → **v2**; `agents/core/prompts.py`); eval: v2 ne Roman Urdu + jhoota "forward" wada theek kiya; "Sara ke orders" par ab bhi apne orders dikhata hai (leak nahi) → guardrail chahiye; avg latency 1.9–3.6s | L12 ⭐ |
+| 8 | Checkpointer | `langgraph-checkpoint-postgres 3.2.0`; **`src/agents/core/checkpointers.py`** (`postgres_url` with `quote`, `postgres_checkpointer` context manager + `setup()`); 8A InMemory (ali-1 yaad, sara-1 alag; 8 checkpoints); `chat_agent.py --thread` Postgres — naye process mein bhi yaad; ⚠️ agent ne "we can unlock it" wada kiya (koi tool nahi) | L10 ⭐ |
 | 7 | LLM + tools | `langchain 1.4.7`, `langchain-groq 1.1.3`; `config/env.py` LLM fields (optional key, `AliasChoices`); **`src/infra/llm/gateway.py`** (`get_chat_model`); 7A LLM classify (structured output) — "account locked" ab `tech+high`; 7B ReAct agent (`@tool`, `bind_tools`, `ToolNode`, `tools_condition`, loop) — 2 tools ek ke baad ek; ⚠️ office hours **hallucinate** kiye | L9 ⭐ |
 | 6 | LangGraph bunyaad | `langgraph 1.2.17` installed; `playground/lesson06_first_graph.py` (ticket triage: classify → set_priority → conditional → 3 reply nodes); reducer, invoke, stream, Mermaid → `docs/graphs/lesson06_ticket_triage.md`; 3 tajurbe (path map ke bagair **khamosh bug**) | L8 ⭐ |
 
 ## 7. Current state
 
 - ✅ Infra (Docker), Django + Postgres, tenants, customers API — sab chal raha hai.
-- ✅ LangGraph + LLM (Groq) chal rahe hain; `infra/llm/gateway.py` bana. Playground mein: ticket triage graph (L6), LLM classify (7A), ReAct tool agent (7B). Asal agents abhi `src/agents/` mein nahi bane; tools abhi nakli data (`FAKE_ORDERS`) par.
+- ✅ LangGraph + LLM (Groq) chal rahe hain; `infra/llm/gateway.py` bana. Playground mein: ticket triage graph (L6), LLM classify (7A), ReAct tool agent (7B), memory demo (8A), chat with Postgres memory.
+- ✅ `src/agents/`: `core/checkpointers.py`, `core/prompts.py`, aur pehla domain agent **`domains/support/`** — tools **asli DB** (orders + customer) par, tenant + customer ke andar band.
+- ✅ `apps/orders` + `devtools` (seed_data). Orders ki REST API abhi nahi bani.
+- ⚠️ "Doosre customer ka data" maangne par agent chupchaap apna data dikhata hai (leak nahi) — guardrail lesson mein theek hoga. LLM totals khud jorta hai — aage DB `SUM()` wala tool.
 - ⚠️ Auth abhi **arzi** hai (`X-Tenant-ID` header) — JWT lesson mein badlega.
 - ⚠️ Agent jo nahi jaanta wo ghadh leta hai (office hours) — guardrails + RAG ki zaroorat.
-- ❌ Abhi tak nahi: checkpointer/memory, Kafka producer/consumer code, Redis code, tests folder, ruff/mypy, CI.
-- Git: pushed — `7a92e22` (Lessons 1–5), `69ee763` (MEMORY.md + CLAUDE.md), Lesson 6 (user ne khud push kiya). **Uncommitted:** Lesson 7.
+- ❌ Abhi tak nahi: Redis checkpointer, Kafka producer/consumer code, Redis code, tests folder, ruff/mypy, CI.
+- Git: pushed — `7a92e22` (Lessons 1–5), `69ee763` (MEMORY.md + CLAUDE.md), `3926d6d` (Lesson 6), `3440413` (Lesson 7). **Uncommitted:** Lessons 8 + 9 (+ Learning 11). User khud commit/push karta hai.
 - `playground/` = seekhne ki files (git mein, magar project ka hissa nahi); asal code `src/` mein.
 
 ## 8. Next steps (roadmap)
@@ -132,8 +141,11 @@ opspilot/
 |---|---|
 | ~~6~~ | ✅ LangGraph ki bunyaad — ho gaya (26 Oct 2026) |
 | ~~7~~ | ✅ LLM + tools + ReAct agent — ho gaya (26 Oct 2026) |
-| **8** | **Checkpointer** (pehle `InMemorySaver`, phir Redis + Postgres), `thread_id`, multi-turn memory ("mera pichla order?"), `get_state` / time travel ki jhalak |
-| 9 | Graph ↔ Django + SSE streaming |
+| ~~8~~ | ✅ Checkpointer (InMemory + Postgres) — ho gaya (26 Oct 2026) |
+| ~~9~~ | ✅ Orders app + agent tools ↔ asli DB + prompt v2 + eval — ho gaya (26 Oct 2026) |
+| **10** | **Graph ↔ Django API + live streaming (SSE)**: `POST /api/support/chat` (tenant + customer token se), `stream_mode` updates/messages |
+| 11 | Kafka (ticket event → agent worker) + **Redis** (idempotency, locks, pub/sub, chat memory TTL = purana 8C) |
+| — | Guardrail node (doosre customer ka data / prompt injection), `get_my_spending_summary` (DB `SUM`), orders REST API |
 | 10+ | Kafka outbox + consumer, interrupt approvals, subgraphs/Send/Command (supervisor), RAG (pgvector), Text-to-SQL, evals (LangSmith), JWT auth, tests, CI |
 
 Bara design (flagship OpsPilot): Kafka `tickets.created` → agent worker → LangGraph supervisor → domain subgraphs (billing/tech/knowledge/analytics) → `interrupt()` approvals → `tickets.resolved`. `agents/` folder: `core/`, `domains/<name>/` (spec.py, graph.py, state.py, routing.py, nodes/, tools/, prompts/), `orchestrator/`, `pipelines/`, `registry.py` (har domain ek line).

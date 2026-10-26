@@ -39,6 +39,8 @@ INSTALLED_APPS = [
     # OpsPilot apps
     'core',
     'apps.customers',
+    'apps.orders',
+    'devtools',
 ]
 
 MIDDLEWARE = [

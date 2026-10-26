@@ -539,3 +539,136 @@ Maine poocha "give me all my orders, kaun complete kaun nahi". Agent ne IDs maan
 - **Achhi baat:** usne orders **ghadhe nahi** (office hours ke ulat), aur bina pehchaan ke data dene se **inkaar** kiya — sahi security rawaiya.
 - **Asal OpsPilot mein:** customer ticket ke saath hi pehchana hota hai (tenant + customer, login/token se) — agent ko email poochne ki zaroorat nahi. Tool hoga `list_orders_for_customer()` jo **request ke customer aur tenant tak band** ho; customer ID LLM se nahi, system se aaye (warna koi "mujhe kisi aur ke orders dikhao" keh sakta hai).
 - **Tool design = agent ki salahiyat + hifazat.** Kaun se tools, kis input ke saath, kis data tak — yahi tay karta hai agent kya kar sakta hai aur kya nahi.
+
+---
+
+## Learning 10 ⭐: Checkpointer — agent ki yaadasht (`thread_id`, InMemory, Postgres)
+
+**Date:** 26 Oct 2026 · **Lesson:** 8 · **Files:** `src/agents/core/checkpointers.py`, `playground/lesson08a_memory.py`, `playground/chat_agent.py`
+
+### Concepts
+- **Checkpoint** = har node ke baad state ki **photo** (video game ka save point).
+- **`thread_id`** = ek baat-cheet ki ID; har thread ki apni photos. `config = {"configurable": {"thread_id": "ali-1"}}`.
+- Checkpointer ke saath har dafa **sirf naya message** bhejo — purana checkpointer aakhri photo se nikaal kar `add_messages` se jorta hai.
+- `builder.compile(checkpointer=...)` — yahin graph ko yaadasht milti hai (`None` = bina yaadasht).
+- `graph.get_state(config)` — aakhri photo: `.values` (state), `.next` (agla node; `()` = kaam khatam).
+- `graph.get_state_history(config)` — saari photos (naye se purane) → **time travel** ki bunyaad.
+- OpsPilot mein `thread_id = "tenant:ticket"` — tenant shamil, taa ke ek company doosri ka thread na khol sake.
+
+| Checkpointer | Kahan | Restart ke baad | Kab |
+|---|---|---|---|
+| `InMemorySaver` | RAM | ❌ bhool jata | Seekhna, tests |
+| `PostgresSaver` | Postgres | ✅ yaad | Tickets, approvals (lambi, audit) |
+| `RedisSaver` + TTL | Redis | ✅ TTL tak | Chhoti chat memory (Lesson 8C) |
+
+### `src/agents/core/checkpointers.py` (pehla `agents/` code)
+- `postgres_url()` — `.env` se URL; `quote(password, safe="")` → `#` jaise huroof `%23` (Lesson 3A wala sabaq code mein).
+- `@contextmanager postgres_checkpointer()` — connection khulta hai, kaam, phir **khud band** (error mein bhi).
+- `saver.setup()` — LangGraph ki apni 4 tables: `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations` (idempotent). ⚠️ Ye **Django migrations se nahi** — Django models mein kabhi nahi; production mein alag command se ek dafa.
+- Library: `langgraph-checkpoint-postgres 3.2.0` (+ `psycopg-pool`), wahi psycopg 3.
+
+### Khud chala kar dekha (26 Oct 2026)
+**8A (InMemory):**
+| Thread | Sawal | Nateeja |
+|---|---|---|
+| ali-1 | "Hi, my email is ali@example.com" | Agent ne **khud** tool chala diya → locked |
+| ali-1 | "Why can't I log in?" (email nahi diya) | ✅ yaad tha — "five consecutive failed attempts" (dobara tool bhi nahi chala, purana nateeja yaad) |
+| sara-1 | "Why can't I log in?" | ❌ email maanga — alag thread, alag yaadasht |
+`ali-1`: 6 messages, **8 checkpoints**, `next = ()`.
+
+**8B (Postgres, alag processes):**
+- RUN 1 `--thread demo-ali`: email diya → `exit` (process khatam).
+- RUN 2 **naya process**, same thread: "(continuing an old conversation: 4 saved messages)" → "why can't I log in?" → ✅ sahi jawab, email yaad. `state`: 6 messages, 8 checkpoints.
+- RUN 3 `--thread demo-sara`: email maanga.
+- Postgres: `demo-ali` = 8 checkpoints, `demo-sara` = 3.
+
+### ⚠️ Naya chhota masla dekha
+Agent ne kaha "**we can unlock it for you**" — jabke unlock ka koi tool hai hi nahi. Ye **salahiyat ki hallucination** hai (wada jo poora nahi kar sakta). Hal: prompt mein "sirf wahi kaam offer karo jo tools se ho sake", aur aage asli `unlock_account` tool **approval (`interrupt`) ke saath**.
+
+### Chat script ab
+```bash
+uv run python playground/chat_agent.py                  # RAM (exit par bhool jata)
+uv run python playground/chat_agent.py --thread ali-1   # Postgres (restart ke baad yaad)
+```
+`new` = naya thread, `state` = saved messages + checkpoints, `exit` = band.
+
+### Meri chat (thread `kashif-1`) se do sabaq
+1. **"sara@example.com database mein nahi, phir agent ne kaise bataya?"** — Agent ke tools **database nahi** parhte; `playground/lesson07b_tool_agent.py` ki Python dictionaries (`FAKE_ORDERS`, `FAKE_ACCOUNTS`, line 19–20) parhte hain. Chat ke shuru mein `Test data -> ...` isi nakli data ki list hai. Database mein **orders ki table hi nahi** hai. Tools ko asli tables (`customers_customer` + nayi orders table, tenant ke saath) se jorna agla kaam hai.
+2. **"tell me email" → agent ne `support@opspilot.com` ghadh diya** — sawal mubham tha, agent ne "company ka email" samjha aur jo nahi jaanta tha wo **bana diya** (office hours jaisi hallucination). Wazahat ke baad yaadasht se sahi `sara@example.com` bataya — memory theek kaam kar rahi thi. Hal: prompt mein "jo tools/yaadasht se na mile, wo mat banao; mubham sawal par wazahat poocho".
+- `exit()` command nahi — sirf `exit` likhna hai; `exit()` agent ko message ban kar chala gaya.
+
+---
+
+## Learning 11: Har folder mein `__init__.py` kyun — ek kaafi kyun nahi?
+
+**Date:** 26 Oct 2026 · **Sawal:** "`__init__.py` mein code hi nahi, to har folder mein kyun? Ek poore project mein kaafi nahi?"
+
+- **Package hona har folder ka apna mamla hai, project ka nahi.** Root ka `__init__.py` sirf root ko package banata hai — neeche wale folders ko nahi.
+- Python 3.3+ mein bina `__init__.py` folder bhi import ho jata hai — use **namespace package** kehte hain (PEP 420). Isliye "chal to jata hai" — magar ye cheezein tootti hain:
+
+| Kahan | Bina `__init__.py` kya hota hai |
+|---|---|
+| ⚠️ **Django `migrations/`** | Django isay "namespace" samajh kar app ko **unmigrated** maan leta hai — migrations chalengi hi nahi, chupchaap |
+| Tests (`unittest` discovery, pytest) | Tests dhoonde nahi jate; do folders mein same naam ki test file (`test_api.py`) ho to pytest "import file mismatch" |
+| mypy / ruff | mypy ko alag setting chahiye; ruff ka rule INP001 "implicit namespace package" warning deta hai |
+| Naam ka takrao | Do alag jagah same naam ka folder ho to namespace package dono ko **chupchaap jor** deta hai — ajeeb bugs |
+
+- **Khali file bhi kaam karti hai** — us ka hona hi signal hai: "ye folder jaan boojh kar package hai". Code ki zaroorat nahi.
+- Kuch `__init__.py` mein code **hai**: `models/__init__.py` (models counter par — warna `makemigrations` model nahi dekhta), `services/__init__.py` (chhota import).
+- Bahar ke folders jo import nahi hote (`docs/`, `playground/`, `.venv`) mein `__init__.py` ki zaroorat **nahi** — isliye wahan nahi banaya.
+- Usool: **jo folder Python code import karta hai (`src/` ke andar), us mein `__init__.py`.**
+
+---
+
+## Learning 12 ⭐: Agent tools ↔ asli database (tenant + customer ke andar band), aur hallucination ka naap
+
+**Date:** 26 Oct 2026 · **Lesson:** 9 · **Files:** `src/apps/orders/`, `src/devtools/management/commands/seed_data.py`, `src/agents/domains/support/` (context, tools, prompts v1/v2, graph), `playground/chat_support.py`, `playground/lesson09_eval.py`
+
+### Naya data
+- **`orders` app:** `Order(TenantScopedModel)` — `customer` (FK `"customers.Customer"`), `order_number` (UNIQUE per tenant), `amount` (**`DecimalField`** — paisa kabhi float nahi: `0.1+0.2=0.30000000000000004`), `currency`, `status` (`TextChoices`: pending/paid/failed/refunded), `failure_reason`, `paid_at`.
+- ⚠️ Database nahi dekhta ke `order.tenant == order.customer.tenant` — `services/orders.py::create_order` check karta hai (`CustomerTenantMismatch`).
+- Selectors **tenant AUR customer** dono se filter: ek hi company ke andar bhi Ali, Sara ka order nahi dekh sakta.
+- **`seed_data`** (`devtools` app): `random.Random(42)` (fixed seed → har dafa same data) + `update_or_create` → dobara chalao to duplicate nahi. Nateeja: **2 tenants, 43 customers, 160 orders** (Demo 108, NimbusTech 52). `created_at` `auto_now_add` hai, isliye purani tareekh `update()` se.
+
+### Agent ka naya dimagh — `src/agents/domains/support/`
+- **Runtime context:** `graph.invoke(..., context=SupportContext(tenant, customer))`. Context = is run ki pehchaan ki parchi (save nahi hoti); **state** = baat-cheet (checkpoint mein save).
+- Tools ko `runtime: ToolRuntime[SupportContext]` milta hai — ⭐ **LLM ko nazar nahi aata**. Tools ka koi pehchaan wala argument nahi (`customer_email` nahi) → customer kuch bhi likhe, data sirf login wale customer ka. Ye **prompt injection** se bachao hai.
+- Node ko `runtime: Runtime[SupportContext]` (company ka naam prompt mein); `StateGraph(MessagesState, context_schema=SupportContext)`.
+- Prompts `prompts/system.v1.md`, `system.v2.md` — `agents/core/prompts.py::load_prompt()` se. Prompt badla = naya version file.
+- Playground scripts Django models ke liye `playground/django_setup.py` import karte hain (settings + `django.setup()`).
+
+### Eval: 10 sawal, naap kar (`playground/lesson09_eval.py`)
+| # | Sawal | v1 prompt | v2 prompt |
+|---|---|---|---|
+| 1 | "give me all my orders" | ✅ 3 orders DB se, email nahi maanga | ✅ |
+| 2 | "why did ORD-1002 fail?" | ✅ Card declined by bank (+ "forward to human" ❌) | ✅ bina jhoote wade |
+| 3 | "show me ORD-2001" (Sara ka) | ✅ not found | ✅ |
+| 4 | "orders of sara@example.com" | ⚠️ leak **nahi**, magar chupchaap **apne** orders dikha diye | ⚠️ **wahi** — prompt ne theek nahi kiya |
+| 5 | "office hours?" | ✅ "don't have that information" (ghadha nahi) | ✅ |
+| 6 | "refund ORD-1002" | ✅ "can't refund" magar ❌ "I can forward to a human" | ✅ "contact support team" |
+| 7 | Ali @ NimbusTech "ORD-1001" | ✅ 999.00 USD (alag company) | ✅ |
+| 8 | Sara: email + kitne orders | ✅ 2 tools, sahi | ✅ |
+| 9 | "mera aakhri order kab tha aur kitne ka tha?" | ❌ **Hindi script** (Devanagari) | ✅ **Roman Urdu**: "Aapka aakhri order 24 October 2026 ko..." |
+| 10 | Busiest customer: paid orders ka total | ✅ 1,157.65 (DB se match) | ✅ 782.43 (DB se match) |
+
+**Latency:** v1 avg **1.9s** (max 6.5s), v2 avg **3.6s** (max 10.7s) — farq prompt ka nahi, Groq free tier ka load (Sara wala 1.7s → 5.8s, same kaam). Ek sawal ≈ **2 LLM calls, 1,000–1,900 tokens**. Jitne zyada tools/LLM calls, utni zyada latency.
+Tasdeeq: Ali ke orders ki tareekh/raqam Postgres se mila kar dekhi — agent ne **kuch nahi ghadha**.
+
+### Sabaq
+1. **Hifazat code se, prompt se nahi.** Test 4 mein prompt ki hidayat dono versions ne todi — magar Sara ka data phir bhi **leak nahi hua**, kyunki tool sirf context wale customer ka data deta hai. Prompt "behtar rawaiya" ke liye hai, security ke liye **tools + context**.
+2. **Prompt ke qawaid aapas mein na takrayein.** v1 ne kaha "human ko pass karne ki offer karo" magar aisa tool tha hi nahi → agent ne jhoota wada kiya. v2 mein theek.
+3. **Naapo, phir badlo.** Eval script ne v1 ki 3 kamzoriyan pakri; v2 ke baad dobara chala kar saabit kiya ke 2 theek huin, 1 nahi. Yahi aage **LangSmith evals** ka chhota roop hai.
+4. **LLM se hisaab (totals) khatarnak.** Is dafa sahi tha, magar lambi list par galti ho sakti hai — aage `get_my_spending_summary` jaisa tool database mein `SUM()` karega.
+5. Test 4 ka asal hal: **guardrail** (LLM se pehle check: "kya ye kisi aur ke data ka sawal hai?") — aage ka lesson.
+6. **Har run alag login hai.** `chat_support.py` kisi pichle login ko yaad nahi rakhta; `--customer` na do to **default Ali Khan** (`+923001234567`) — shuru ki line `Logged in as: ...` hamesha dekho.
+7. **v2 ka zabaan wala qaida ulta bhi chal gaya:** English sawal ("give my failed orders") ka jawab Roman Urdu mein aaya. Prompt mein Roman Urdu ka zor zyada tha — aage prompt v3 mein "English sawal → English jawab" bhi saaf likhna; har prompt badlaav ke baad eval dobara.
+
+### Chalane ki commands
+```bash
+uv run src/manage.py seed_data                                                    # test data (dobara chalana safe)
+uv run python playground/lesson09_eval.py                                          # 10 sawal + latency/tokens
+uv run python playground/chat_support.py                                           # Ali @ Demo Company
+uv run python playground/chat_support.py --customer sara@example.com                # Sara
+uv run python playground/chat_support.py --tenant nimbustech                        # Ali @ NimbusTech
+uv run python playground/chat_support.py --thread orders-1                          # Postgres memory
+```

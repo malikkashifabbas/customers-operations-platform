@@ -41,14 +41,14 @@ def agent(state: MessagesState) -> dict:
     return {"messages": [response]}
 
 
-def build_graph():
+def build_graph(checkpointer=None):
     builder = StateGraph(MessagesState)
     builder.add_node("agent", agent)
     builder.add_node("tools", ToolNode(TOOLS))
     builder.add_edge(START, "agent")
     builder.add_conditional_edges("agent", tools_condition)
     builder.add_edge("tools", "agent")
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
 
 if __name__ == "__main__":
