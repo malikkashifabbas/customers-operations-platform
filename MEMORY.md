@@ -4,7 +4,7 @@
 > Ye project ki permanent history hai — kya bana, kyun bana, kahan hai, aur agla qadam kya hai.
 > **Har lesson mukammal hone par is file ko update karna lazmi hai** (neeche "Lesson log" aur "Current state").
 
-**Last updated:** 25 Oct 2026 — after Lesson 5 (customers app + first API), commit `7a92e22` pushed.
+**Last updated:** 26 Oct 2026 — after Lesson 6 (LangGraph bunyaad: state, node, edge, reducer). Lesson 6 abhi uncommitted.
 
 ---
 
@@ -21,7 +21,7 @@
 1. **Learning mode:** har lesson pehle **Roman English / Roman Urdu** mein, line by line samjhao (har abbreviation ka poora naam). User aksar kehta hai "aap khud kar do" — tab steps khud karo aur **report** do. Admin password jaisi cheezein user khud type karta hai.
 2. **`docs/learnings.md`:** har nayi seekhi hui cheez "Learning N" ban kar wahan jati hai (kya, kyun, kaise check karein).
 3. **`MEMORY.md` (ye file):** har lesson ke baad update — Lesson log + Current state + Next steps.
-4. **Commit/push sirf user ke kehne par.** Push user ke Terminal panel se (sandbox ke paas git credentials nahi). Commit author: `Malik Kashif Abbas <malikkashifabbas28@gmail.com>` (repo-local git config).
+4. **Commit aur push user KHUD karta hai** (26 Oct 2026 se). Har lesson ke baad AI sirf commands (`git add`, `git commit -m "..."`, `git push`) + commit message deta hai, aur pehle secrets scan karta hai. Commit author: `Malik Kashif Abbas <malikkashifabbas28@gmail.com>` (repo-local git config).
 5. **Public repo:** har push se pehle passwords/secrets scan karo. `.env` gitignored hai — kabhi commit nahi. Docs mein asli password kabhi mat likho.
 6. Code comments: **ek line** max, sirf "kyun" — code ko dohrao mat.
 
@@ -109,20 +109,24 @@ opspilot/
 | 4 | core app | BaseModel, TenantScopedModel, Tenant; `core.0001_initial`; Demo Company tenant | L5 ⭐ |
 | 5 | customers app | Pehli API (Ninja), tenant guard, DomainError, unique phone per tenant; 10 tests pass incl. tenant isolation | L6, L7 |
 | — | Git | Commit `7a92e22` pushed to GitHub (Lessons 1–5) | — |
+| — | Project memory | `MEMORY.md` + `CLAUDE.md` banaye; commit `69ee763` pushed | — |
+| 6 | LangGraph bunyaad | `langgraph 1.2.17` installed; `playground/lesson06_first_graph.py` (ticket triage: classify → set_priority → conditional → 3 reply nodes); reducer, invoke, stream, Mermaid → `docs/graphs/lesson06_ticket_triage.md`; 3 tajurbe (path map ke bagair **khamosh bug**) | L8 ⭐ |
 
 ## 7. Current state
 
 - ✅ Infra (Docker), Django + Postgres, tenants, customers API — sab chal raha hai.
+- ✅ LangGraph installed; pehla graph (bina LLM) `playground/` mein chal raha hai. Asal agents abhi `src/agents/` mein nahi bane.
 - ⚠️ Auth abhi **arzi** hai (`X-Tenant-ID` header) — JWT lesson mein badlega.
-- ❌ Abhi tak nahi: LangGraph, Kafka producer/consumer code, Redis code, tests folder, ruff/mypy, CI.
-- Uncommitted: `MEMORY.md`, `CLAUDE.md` (agle commit mein jayenge).
+- ❌ Abhi tak nahi: LLM (API key chahiye hogi), checkpointer, Kafka producer/consumer code, Redis code, tests folder, ruff/mypy, CI.
+- Git: pushed — `7a92e22` (Lessons 1–5), `69ee763` (MEMORY.md + CLAUDE.md). **Uncommitted:** Lesson 6 (`playground/`, `docs/graphs/`, learnings L8, `pyproject.toml`/`uv.lock` mein langgraph, MEMORY.md).
+- `playground/` = seekhne ki files (git mein, magar project ka hissa nahi); asal code `src/` mein.
 
 ## 8. Next steps (roadmap)
 
 | Lesson | Topic |
 |---|---|
-| **6** | **LangGraph ki bunyaad** (Django ke bagair): state, node, edge, pehla chhota graph, Mermaid diagram |
-| 7 | Graph mein LLM, tools, conditional edges |
+| ~~6~~ | ✅ LangGraph ki bunyaad — ho gaya (26 Oct 2026) |
+| **7** | **Graph mein LLM** (classify node keyword ki jagah LLM + structured output), **tools** (ToolNode), `messages` + `add_messages` reducer, conditional edge "tool chahiye?" — LLM provider/API key ka faisla pehle |
 | 8 | Checkpointer (Redis + Postgres), `thread_id`, memory |
 | 9 | Graph ↔ Django + SSE streaming |
 | 10+ | Kafka outbox + consumer, interrupt approvals, subgraphs/Send/Command (supervisor), RAG (pgvector), Text-to-SQL, evals (LangSmith), JWT auth, tests, CI |

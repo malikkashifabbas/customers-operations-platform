@@ -425,3 +425,46 @@ Selector sirf **parhta** hai, service **likhti** hai. Alag isliye: dhoondna aasa
 - Docker Desktop ko terminal tab se `& '...Docker Desktop.exe'` se chalaya, phir tab band kiya → **Docker bhi band** (tab ke saath us ka chalaya process bhi mar jata hai). Sahi: `Start-Process '...Docker Desktop.exe'` (alag process) ya Start Menu se.
 - Docker Desktop → Settings → General → **"Start Docker Desktop when you sign in"** on kar do, phir restart ke baad khud chalega.
 - `docker compose up -d --wait` — containers ke **healthy** hone tak ruk kar hi wapas aata hai.
+
+---
+
+## Learning 8 ⭐: LangGraph ki bunyaad — state, node, edge, reducer
+
+**Date:** 26 Oct 2026 · **Lesson:** 6 · **File:** `playground/lesson06_first_graph.py` · **Diagram:** `docs/graphs/lesson06_ticket_triage.md`
+
+### Factory ki misaal
+```
+            WHITEBOARD (State): ticket_text, category, priority, reply, steps
+START ──► [classify] ──► [set_priority] ──┬──► [billing_reply] ──► END
+                                           ├──► [tech_reply]    ──► END
+                                           └──► [general_reply] ──► END
+```
+| Lafz | Misaal | Matlab |
+|---|---|---|
+| **State** | Whiteboard | `TypedDict` — shared dictionary, poore kaam ka haal |
+| **Node** | Mazdoor | Python function: state **parhta** hai, sirf **apna hissa** (update) wapas karta hai |
+| **Edge** | Conveyor belt | `add_edge(a, b)` — "a ke baad hamesha b" |
+| **Conditional edge** | Signboard | `add_conditional_edges(node, route_fn, path_map)` — route function naam lautata hai, path map us naam ko asal node se jorta hai |
+| **Reducer** | Likhne ka qaida | Default = **badal do**; `Annotated[list, operator.add]` = **jor do** |
+| **START / END** | Darwaze | Shuru / khatam |
+| **compile()** | Inspection | Graph check karke chalne ke qabil banata hai |
+| **invoke()** | Line chalao | Shuru ka state do → **aakhri** state lo |
+| **stream(stream_mode="updates")** | CCTV | Har node ke baad **sirf us ka update** — OpsPilot mein yahi SSE se browser tak jayega |
+
+### Sab se zaroori usool
+- Node **poora state nahi**, sirf jo badla wo `return` karta hai: `return {"category": "billing", "steps": [...]}`.
+- **Reducer** chat agents ki jaan hai — aage `messages` isi tarah jurenge (`add_messages`).
+- Routing function **node nahi** — state mein kuch nahi likhta, sirf agla raasta batata hai.
+
+### Khud chala kar dekha (26 Oct 2026)
+| Test | Natija |
+|---|---|
+| invoke: "I was charged twice, please refund ASAP" | `billing`, `high`, billing reply, `steps` = `['classify -> billing', 'set_priority -> high', 'billing_reply']` (3 nodes ka record) |
+| stream: "The app shows an error on login" | 3 updates: `classify` → `tech`, `set_priority` → `normal`, `tech_reply` |
+| Mermaid | Dotted arrows (`-. billing .->`) = conditional, seedhe (`-->`) = normal; GitHub par diagram ban jata hai |
+| **Tajurba 1:** reducer hataya (`steps: list[str]`) | `steps` = sirf `['billing_reply']` — har node ne pichla **mita** diya |
+| **Tajurba 2:** path map hataya | ⚠️ **Koi error nahi!** Warning: `wrote to unknown channel branch:to:billing, ignoring it` — route ne `"billing"` lautaya, is naam ka koi node nahi, to graph **chupchaap ruk gaya**, reply bana hi nahi. Mermaid bhi ghalat: `set_priority --> __end__`. Sabaq: route ke jawab hamesha **asal node naam** hon ya path map do — warna khamosh bug |
+| **Tajurba 3:** "My account is locked, urgent!" | `general`, `high` — "locked" keyword list mein nahi tha. Keyword rules kamzor hain → **Lesson 7 mein LLM** |
+
+### ⚠️ Gotcha: LangGraph node ki type hint bhi parhta hai
+Node function `def classify(state: TicketState)` ki hint se LangGraph us node ka **input schema** banata hai. Ek hi `steps` field do alag types (reducer ke saath aur bagair) mein aaye to: `ValueError: Channel 'steps' already exists with a different type`. Har graph ke nodes ki hints usi graph ki state se milni chahiyein.
