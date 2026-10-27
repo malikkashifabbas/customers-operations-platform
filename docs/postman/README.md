@@ -9,12 +9,13 @@
 
 | Variable | Meaning |
 |---|---|
-| `tenantId` | Demo Company |
-| `otherTenantId` | NimbusTech (for the cross-tenant 401 check) |
-| `customerId` | Ali Khan @ Demo Company (switch to `{{saraCustomerId}}` to chat as Sara) |
+| `tenantPublicId` | Demo Company — `core_tenant.public_id`, sent as `X-Tenant-Public-Id` |
+| `otherTenantPublicId` | NimbusTech (for the cross-tenant 401 check) |
+| `customerPublicId` | Ali Khan @ Demo Company — `customers_customer.public_id`, sent as `X-Customer-Public-Id` (switch to `{{saraCustomerPublicId}}` to chat as Sara) |
 | `conversationId` | Chat memory key; filled automatically from the last chat response |
 | `newCustomerPublicId` | Filled by *Create customer* |
+| `ticketPublicId` | Filled by *Create ticket*; *Get ticket* polls it until `answered` (needs relay + worker running) |
 
-The demo ids stay the same as long as the local database is not wiped; after `docker compose down -v` + `seed_data`, update them from `core_tenant` / `customers_customer`.
+The demo ids stay the same as long as the local database is not wiped; after `docker compose down -v` + `seed_data`, get the new ones with `uv run src/manage.py list_ids`.
 
 **Rule:** every new or changed API is added to the collection in the same change.

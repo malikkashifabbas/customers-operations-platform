@@ -17,7 +17,7 @@ CUSTOMER_HEADER_DOCS = {
             "name": CUSTOMER_HEADER,
             "required": True,
             "schema": {"type": "string", "format": "uuid"},
-            "description": "public_id of the logged-in customer (temporary until JWT)",
+            "description": "customers_customer.public_id of the logged-in customer (temporary until JWT)",
         }
     ]
 }

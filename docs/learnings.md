@@ -719,3 +719,133 @@ API par har request naya DB connection kholna mehenga → `get_pool_checkpointer
 - `OpsPilot.postman_collection.json` (Customers, Chat, Security checks) + `OpsPilot.local.postman_environment.json` (baseUrl + demo ids).
 - Test scripts khud variables bharte hain: *Create customer* → `newCustomerPublicId`, *Send message* → `conversationId`.
 - **Usool: har nayi/badli API isi change mein collection mein bhi.** OpenAPI JSON (`/api/openapi.json`) bhi Postman mein import ho sakta hai.
+
+---
+
+## Learning 14 ⭐: Kafka event flow — outbox, relay, agent worker, idempotency, DLQ
+
+**Date:** 26 Oct 2026 · **Lesson:** 11A · **Files:** `src/apps/tickets/`, `src/infra/eventbus/` (models, topics, events, outbox, kafka), `src/infra/cache/` (client, keys, idempotency), `src/workers/` (handlers/tickets.py, commands: create_topics, run_outbox_relay, run_agent_worker), `playground/kafka_tools.py`
+
+### Kyun event-driven?
+API agent ko seedha chalaye to: 1,000 tickets par server phans jaye, LLM down ho to ticket gum, aur Hypernim ki doosri services ko bhi tickets dene hain. Hal: **API sirf ticket save kare + event chhore (202 foran)**, kaam **alag workers** apni raftaar se karein.
+
+```
+POST /api/tickets/ ──► [1 transaction] Ticket(open) + OutboxEvent(published=false) ──► 202
+run_outbox_relay ──► Kafka tickets.created (key=ticket_id) ──► run_agent_worker
+   worker: Redis "pehle hua?" → agent → Ticket(answered)+Outbox(tickets.answered) → offset commit
+   3 dafa fail / ticket hi nahi → tickets.created.dlq
+GET /api/tickets/{id} ──► status + reply
+```
+
+### Concepts
+- **Event** = "ye hua" ki khabar, chhota JSON: `event_id`, `event_type`, **`event_version`**, `tenant_id`, `ticket_id`, `occurred_at`. Poora data nahi, sirf IDs — worker DB se taaza parhta hai. Shakal Pydantic (`TicketCreatedV1`).
+- ⭐ **Outbox pattern:** ticket aur event **ek hi DB transaction** mein (dono ya koi nahi). Relay outbox se Kafka par bhejta hai aur **Kafka ki tasdeeq ke baad** hi `published_at` lagata hai. Kafka band → events intezar karte hain, gum nahi. `select_for_update(skip_locked=True)` → kai relays ek row do dafa nahi bhejenge. Partial index sirf unpublished rows par.
+- **Partition key = ticket_id** → ek ticket ke events ek partition mein, tarteeb se (duplicate test mein replay usi partition 1 mein gaya).
+- **Consumer group** `agent-workers` → zyada workers chalao, Kafka partitions baant deta hai.
+- **Offset commit kaam ke BAAD** (`enable.auto.commit=False`) → crash par event dobara aata hai, gum nahi.
+- ⭐ **Idempotency** = 1 dafa karo ya 10 dafa, nateeja ek (lift ka button). **Rate limit nahi** (wo "kitni dafa" hai). Kafka "at-least-once" → duplicates aate hain. Pehredaar: (1) Redis `opspilot:evt:done:{event_id}` (TTL 7 din), (2) ticket status `open` nahi to skip, (3) **idempotent producer** (`enable.idempotence=True`) — network retry se Kafka mein duplicate nahi.
+- **DLQ** (`tickets.created.dlq`): `PermanentEventError` (ticket hi nahi) → foran; transient error (LLM rate limit) → 2s, 4s retry → 3 dafa fail → ticket `failed` + DLQ. Header `dlq_reason` mein wajah. Ek kharab event poori line nahi rokta.
+- Topic names sirf `infra/eventbus/topics.py` mein; Kafka auto-create **off** → `create_topics` command (dobara chalana safe). Redis keys sirf `infra/cache/keys.py` mein.
+- **Layering:** `apps/` kabhi `agents/` import nahi karte — agent chalane wala code `workers/handlers/` mein (workers → agents + apps).
+- Forged event se bachao: `get_ticket_for_event` tenant **aur** ticket dono IDs se dhoondta hai.
+
+### Tests (26 Oct 2026) — sab pass
+| # | Test | Natija |
+|---|---|---|
+| 1 | Ticket banao (Ali, "ORD-1002 failed, why?") | **202** `open` → relay `published` → worker `answered in 1.5s` → GET: "card was declined by your bank" (~2s) |
+| 2 | Duplicate: wahi event dobara Kafka par (`kafka_tools.py replay-last`) | `[partition=1 offset=2] event 5a1eb6b0 already processed -> skipping` ✅ |
+| 3 | Na milne wala ticket (`bogus-event`) | `sent to tickets.created.dlq: ticket ... not found` ✅ (DLQ mein `dlq_reason` header ke saath) |
+| 4 | **Worker band**, 3 tickets | 202 teeno; consumer group **LAG = 2** (partition 2) — Kafka mein intezar |
+| 5 | Worker wapas | teeno `answered` (2.7s, 1.0s, 1.6s); teeno partitions **LAG = 0**, ek worker ne teeno partitions sambhale |
+| 6 | **Relay band**, 1 ticket | outbox row `published = f` — gum nahi |
+| 7 | Relay wapas | `published = t` → worker → `answered` ✅ |
+
+### ⚠️ Nayi hallucination
+ORD-1003 (pending) ke ticket par agent ne kaha: "you can complete the payment **through the payment link in your order details**" — aisa koi link humare data mein nahi. Ghadhi hui feature. Guardrail / prompt v3 ki list mein.
+
+### Chalane ki commands (4 cheezein)
+```bash
+docker compose up -d --wait                    # Kafka, Redis, Postgres
+uv run src/manage.py create_topics             # ek dafa
+uv run src/manage.py runserver                 # terminal 1
+uv run src/manage.py run_outbox_relay          # terminal 2
+uv run src/manage.py run_agent_worker          # terminal 3 (zyada workers = zyada terminal)
+uv run python playground/kafka_tools.py replay-last   # duplicate test
+uv run python playground/kafka_tools.py bogus-event   # DLQ test
+```
+Kafka UI (http://localhost:8080): Topics → `tickets.created` / `tickets.answered` / `tickets.created.dlq`, Consumers → `agent-workers` lag.
+
+---
+
+## Learning 15: Code ka naqsha — ek ticket ka safar file ba file
+
+**Date:** 26 Oct 2026 · **Sawal:** "Kafka, workers aur infra ka code pehli dafa parha, flow samajh nahi aaya; `apps.py` kya hai; `TicketIn`/`TicketOut`; `selectors.py` kyun?"
+
+### Teen folders, teen kirdaar
+| Folder | Kirdaar | Misaal |
+|---|---|---|
+| `apps/` | **Business** — data aur rules (tickets, orders, customers) | "ticket kaise banta hai, kab answered hota hai" |
+| `infra/` | **Bahar ki duniya ke adapters** — Kafka, Redis, LLM se baat | "Kafka par message kaise bhejna hai", "Redis mein key kaise rakhni hai" |
+| `workers/` | **Alag chalne wale processes** — API ke bahar background kaam | "Kafka sunte raho, ticket aaye to agent chalao" |
+| `agents/` | **AI dimagh** — LangGraph graphs | support agent |
+
+### Ek ticket ka safar (parhne ki tarteeb bhi yahi)
+1. `apps/tickets/api.py::create_ticket` — request aayi, `services.create_ticket()` bulaya, **202** lautaya.
+2. `apps/tickets/services/tickets.py::create_ticket` — **ek transaction**: `Ticket.objects.create(...)` + `publish_event(...)`.
+3. `infra/eventbus/outbox.py::publish_event` — event ko `OutboxEvent` table mein **likh diya** (Kafka ko abhi chhua bhi nahi).
+4. `workers/management/commands/run_outbox_relay.py` — alag process, har second: outbox ki unpublished rows → `producer.produce()` → Kafka confirm → `published_at`.
+5. Kafka topic `tickets.created` — message intezar karta hai.
+6. `workers/management/commands/run_agent_worker.py` — alag process: `consumer.poll()` → `process()` → Redis check (`infra/cache/idempotency.py`) → handler → `consumer.commit()`.
+7. `workers/handlers/tickets.py::handle_ticket_created` — ticket DB se, agent (`agents/domains/support/graph.py`) chalaya, `services.mark_ticket_answered()`.
+8. `apps/tickets/services/tickets.py::mark_ticket_answered` — ticket `answered` + naya event `tickets.answered` (phir step 3–4 dobara).
+9. `apps/tickets/api.py::get_ticket` — client poll karta hai, `status` + `reply`.
+
+### `apps.py` (har app mein)
+`AppConfig` = app ka **shanakhti card**. `name = 'apps.tickets'` = app ka Python raasta (Django isi se folder dhoondta hai); `default_auto_field` = models ki `id` BigInt ho. `INSTALLED_APPS` mein `'apps.tickets'` likha → Django ye card parhta hai → models/admin load. Har app mein isliye hai ke har app ka apna card hota hai. `infra/eventbus/apps.py` mein `label = 'eventbus'` bhi — table naam `eventbus_outboxevent` (warna `infra.eventbus` ka naam ajeeb banta).
+
+### `TicketIn` / `TicketOut` (`schemas.py`)
+- `TicketIn` = **andar aane** wali shakal (client kya bhej sakta hai): sirf `subject` + `body` (lambai ki jaanch). Client `status`, `reply`, `tenant`, `customer` nahi bhej sakta.
+- `TicketOut` = **bahar jaane** wali shakal (client ko kya dikhe): `public_id, subject, body, status, reply, created_at, answered_at` — `id`, `tenant_id`, `customer_id` kabhi nahi.
+- Ek ke bajaye do isliye ke **andar aur bahar ki zaroorat alag** hai (DRF mein ye kaam `serializers.py` karta hai).
+
+### `selectors.py` (tickets mein)
+Sirf **parhne** wali queries (`SELECT`), kuch badalti nahi. Tickets mein do:
+- `get_ticket_for_customer(tenant, customer, public_id)` — API ke liye: tenant **aur** customer dono filter (Ali, Sara ka ticket na dekhe).
+- `get_ticket_for_event(tenant_public_id, ticket_public_id)` — worker ke liye: event ki dono IDs se (jaali event doosri company tak na pahunche).
+Faida: query ek jagah → tenant filter kabhi nahi bhoolta; API, worker aur aage AI tool sab yahi use karte hain. Likhna = `services/`, parhna = `selectors.py`.
+
+### Headers ki IDs kahan se aati hain, aur agent tak kaise pahunchti hain
+- `X-Tenant-Public-Id` = `core_tenant.public_id` (company), `X-Customer-Public-Id` = `customers_customer.public_id` (pehle naam `X-Tenant-ID` / `X-Customer-ID` the — Learning 16 dekho).
+- Sab se aasan: `uv run src/manage.py list_ids [--search fatima]`. Ya Beekeeper SQL, Django admin (Tenant/Customer page par `public_id`), ya Postman *List customers*.
+- **Agent ko headers ka pata hi nahi.** Safar: `apps/chat/auth.py` `CustomerHeaders.authenticate()` headers parh kar DB se `Tenant` + `Customer` dhoondta hai (customer usi tenant ka na ho → 401) → `request.auth = CustomerPrincipal` → services `SupportContext(tenant, customer)` banate hain → `graph.invoke(..., context=...)` → tools `runtime.context.customer`. LLM ko IDs kabhi nazar nahi aati; woh sirf message dekhta hai.
+- `checkpoint_blobs`/`checkpoints` mein `thread_id` `ac5b565b...:` (tenant) se shuru hota hai — `tenant:customer:conversation`.
+
+---
+
+## Learning 16 ⭐: Naam = database ka naam (`<model>_public_id`)
+
+**Date:** 27 Oct 2026 · **Sawal:** "header ka naam `X-Tenant-ID`, DB mein column `public_id` — mujhe kaise pata chalta ID kahan se lun?"
+
+### Masla
+`X-Tenant-ID` padh kar koi bhi `customers_customer.tenant_id` column uthata — jismein `1` (andar ka BigInt) hai — jabke header ko `core_tenant.public_id` (UUID) chahiye tha. Event mein bhi `"tenant_id"`/`"ticket_id"` likha tha magar andar `public_id` jata tha. **Naam ne ghalat jagah bheja.**
+
+### Qaida (MEMORY.md #8, CLAUDE.md)
+Jo ID bahar jaye (header, JSON, event, URL) → naam `<model>_public_id` / `X-<Model>-Public-Id`. `tenant_id`, `customer_id` sirf DB ke andar ke BigInt columns — bahar kabhi nahi.
+
+### Kya badla
+| Pehle | Ab | Database |
+|---|---|---|
+| `X-Tenant-ID` | `X-Tenant-Public-Id` | `core_tenant.public_id` |
+| `X-Customer-ID` | `X-Customer-Public-Id` | `customers_customer.public_id` |
+| event `tenant_id` | `tenant_public_id` | `core_tenant.public_id` |
+| event `ticket_id` | `ticket_public_id` | `tickets_ticket.public_id` |
+| Postman `{{tenantId}}`, `{{customerId}}`, `{{ticketId}}` | `{{tenantPublicId}}`, `{{customerPublicId}}`, `{{ticketPublicId}}` | — |
+Files: `core/tenancy.py`, `apps/chat/auth.py` (constants `TENANT_HEADER`, `CUSTOMER_HEADER`), `infra/eventbus/events.py`, `apps/tickets/services`, `workers/handlers/tickets.py`, `run_agent_worker.py`, `list_ids`, `stream_client.py`, `kafka_tools.py`, Postman (collection + environment + README), cheatsheet.
+
+### Tasdeeq (27 Oct 2026)
+Purane headers → **401** (customers aur chat dono); naye headers → customers 200 (27), chat 200, ticket 202 → `answered` ~4s; outbox payload mein `tenant_public_id` / `ticket_public_id`; DLQ aur duplicate-skip naye event par bhi theek; `stream_client` aur `list_ids` naye naam dikhate hain.
+
+### Production mein farq
+Header/event ka naam badalna **breaking change** hai: frontend aur doosri services toot jati hain. Wahan naya version (`TicketCreatedV2`) banate, kuch waqt dono qubool karte, phir purana band. Hum seekhne ke daur mein hain aur koi consumer nahi, isliye seedha badla. Isi liye naam **pehle din sahi** rakhna sasta hai.
+
+⚠️ Relay/worker **khud reload nahi hote** (runserver hota hai) — code badle to dono restart karo, warna purana worker naye events ko "bad payload" samjhega.

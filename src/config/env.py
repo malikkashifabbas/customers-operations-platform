@@ -21,5 +21,8 @@ class Env(BaseSettings):
     # Optional so Django still starts without a key; accepts the generic or the provider-specific name.
     llm_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("LLM_API_KEY", "GROQ_API_KEY"))
 
+    kafka_bootstrap_servers: str = "localhost:9092"
+    redis_url: str = "redis://localhost:6379/0"
+
 
 env = Env()

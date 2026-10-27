@@ -41,6 +41,9 @@ INSTALLED_APPS = [
     'apps.customers',
     'apps.orders',
     'apps.chat',
+    'apps.tickets',
+    'infra.eventbus',
+    'workers',
     'devtools',
 ]
 

@@ -19,3 +19,4 @@ Guidance for Claude Code (and any AI or developer) working in this repository.
 - This is a **learning project**: explain every step line by line in **Roman English / Roman Urdu**, spelling out every abbreviation. When the user says "aap khud kar do", do the steps yourself and give a report.
 - Code comments are one line max and explain *why*, never restate the code.
 - Every model is tenant-scoped (`TenantScopedModel`) and every query filters by tenant — see `MEMORY.md` §3 and Learning 5.
+- Names must match the database: any id that leaves the server (header, JSON field, event field, query param) is named `<model>_public_id` / `X-<Model>-Public-Id`, so its table and column are obvious. `tenant_id` / `customer_id` mean the internal BigInt FK columns only and are never exposed.

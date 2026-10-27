@@ -28,7 +28,7 @@ def main() -> None:
 
     tenant = Tenant.objects.get(slug=args.tenant)
     customer = Customer.objects.get(Q(phone=args.customer) | Q(email=args.customer), tenant=tenant)
-    headers = {"X-Tenant-ID": str(tenant.public_id), "X-Customer-ID": str(customer.public_id)}
+    headers = {"X-Tenant-Public-Id": str(tenant.public_id), "X-Customer-Public-Id": str(customer.public_id)}
     body = {"message": args.message, "conversation_id": args.conversation}
 
     event = None

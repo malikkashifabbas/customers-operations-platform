@@ -2,7 +2,7 @@
   "info": {
     "name": "OpsPilot API",
     "_postman_id": "8f6d2a52-9a1c-4b8e-9f3e-0b7c5e1a4d21",
-    "description": "All OpsPilot REST APIs for frontend and service developers.\n\n**Setup:** import this collection and `OpsPilot.local.postman_environment.json`, select the *OpsPilot Local* environment, run `uv run src/manage.py seed_data` and `uv run src/manage.py runserver`.\n\n**Headers (temporary until JWT login):**\n- `X-Tenant-ID` = tenant (company) `public_id` — every API.\n- `X-Customer-ID` = customer `public_id` — chat APIs only. The customer must belong to that tenant, otherwise 401.\n\n**Response formats:**\n- Lists are paginated: `?limit=20&offset=0` → `{\"items\": [...], \"count\": 57}`.\n- Business errors: `{\"code\": \"CUSTOMER_ALREADY_EXISTS\", \"message\": \"...\"}` with 4xx/5xx status.\n- Auth errors: 401 `{\"detail\": \"Unauthorized\"}`.\n- Validation errors: 422 `{\"detail\": [{\"loc\": [...], \"msg\": \"...\"}]}`.\n- IDs in URLs and bodies are always `public_id` (UUID), never the internal numeric id.\n\nLive docs: `{{baseUrl}}/api/docs` (Swagger), OpenAPI JSON: `{{baseUrl}}/api/openapi.json`.",
+    "description": "All OpsPilot REST APIs for frontend and service developers.\n\n**Setup:** import this collection and `OpsPilot.local.postman_environment.json`, select the *OpsPilot Local* environment, run `uv run src/manage.py seed_data` and `uv run src/manage.py runserver`. Get any tenant/customer ids with `uv run src/manage.py list_ids`.\n\n**Headers (temporary until JWT login):**\n- `X-Tenant-Public-Id` = `core_tenant.public_id` (the company) — every API.\n- `X-Customer-Public-Id` = `customers_customer.public_id` — chat and tickets APIs. The customer must belong to that tenant, otherwise 401.\n\n**Response formats:**\n- Lists are paginated: `?limit=20&offset=0` → `{\"items\": [...], \"count\": 57}`.\n- Business errors: `{\"code\": \"CUSTOMER_ALREADY_EXISTS\", \"message\": \"...\"}` with 4xx/5xx status.\n- Auth errors: 401 `{\"detail\": \"Unauthorized\"}`.\n- Validation errors: 422 `{\"detail\": [{\"loc\": [...], \"msg\": \"...\"}]}`.\n- IDs in URLs and bodies are always `public_id` (UUID), never the internal numeric id.\n\nLive docs: `{{baseUrl}}/api/docs` (Swagger), OpenAPI JSON: `{{baseUrl}}/api/openapi.json`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -14,7 +14,7 @@
           "name": "List customers",
           "request": {
             "method": "GET",
-            "header": [{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }],
+            "header": [{ "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" }],
             "url": {
               "raw": "{{baseUrl}}/api/customers/?limit=20&offset=0",
               "host": ["{{baseUrl}}"],
@@ -45,7 +45,7 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
@@ -65,7 +65,7 @@
           "name": "Get customer",
           "request": {
             "method": "GET",
-            "header": [{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }],
+            "header": [{ "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" }],
             "url": {
               "raw": "{{baseUrl}}/api/customers/{{newCustomerPublicId}}",
               "host": ["{{baseUrl}}"],
@@ -98,8 +98,8 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
-              { "key": "X-Customer-ID", "value": "{{customerId}}" },
+              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
+              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
@@ -120,8 +120,8 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
-              { "key": "X-Customer-ID", "value": "{{customerId}}" },
+              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
+              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
@@ -142,8 +142,8 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
-              { "key": "X-Customer-ID", "value": "{{customerId}}" },
+              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
+              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" },
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Accept", "value": "text/event-stream" }
             ],
@@ -163,15 +163,64 @@
       ]
     },
     {
+      "name": "Tickets (async, Kafka)",
+      "description": "Create returns **202 Accepted** at once with `status: open`. The ticket event goes to Kafka (`tickets.created`) via the outbox; the agent worker answers it and sets `status: answered` + `reply`. Poll *Get ticket* (or later, subscribe to updates).\n\nNeeds three processes: `runserver`, `run_outbox_relay`, `run_agent_worker` (and `create_topics` once).",
+      "item": [
+        {
+          "name": "Create ticket",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 202) {",
+                  "  pm.collectionVariables.set('ticketPublicId', pm.response.json().public_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
+              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Payment problem\",\n  \"body\": \"My order ORD-1002 failed, why did that happen?\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/tickets/", "host": ["{{baseUrl}}"], "path": ["api", "tickets", ""] },
+            "description": "202 → TicketOut `{public_id, subject, body, status: \"open\", reply: \"\", created_at, answered_at: null}`. The test script saves `public_id` into `ticketPublicId`."
+          }
+        },
+        {
+          "name": "Get ticket (poll until answered)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
+              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/tickets/{{ticketPublicId}}", "host": ["{{baseUrl}}"], "path": ["api", "tickets", "{{ticketPublicId}}"] },
+            "description": "`status`: `open` (waiting for the worker) → `answered` (with `reply` and `answered_at`) or `failed` (worker gave up after 3 attempts). 404 if the ticket belongs to another customer."
+          }
+        }
+      ]
+    },
+    {
       "name": "Security checks",
       "description": "Requests that must be rejected — useful to verify tenant isolation after changes.",
       "item": [
         {
-          "name": "Chat without X-Customer-ID (expect 401)",
+          "name": "Chat without X-Customer-Public-Id (expect 401)",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": { "mode": "raw", "raw": "{\n  \"message\": \"hi\"\n}", "options": { "raw": { "language": "json" } } },
@@ -183,8 +232,8 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{otherTenantId}}" },
-              { "key": "X-Customer-ID", "value": "{{customerId}}" },
+              { "key": "X-Tenant-Public-Id", "value": "{{otherTenantPublicId}}" },
+              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": { "mode": "raw", "raw": "{\n  \"message\": \"my orders\"\n}", "options": { "raw": { "language": "json" } } },
@@ -197,8 +246,8 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
-              { "key": "X-Customer-ID", "value": "{{customerId}}" },
+              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
+              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": { "mode": "raw", "raw": "{\n  \"message\": \"hi\",\n  \"conversation_id\": \"x:y\"\n}", "options": { "raw": { "language": "json" } } },
@@ -206,7 +255,7 @@
           }
         },
         {
-          "name": "List customers without X-Tenant-ID (expect 401)",
+          "name": "List customers without X-Tenant-Public-Id (expect 401)",
           "request": {
             "method": "GET",
             "header": [],
@@ -218,6 +267,7 @@
   ],
   "variable": [
     { "key": "conversationId", "value": "postman-demo-1" },
-    { "key": "newCustomerPublicId", "value": "" }
+    { "key": "newCustomerPublicId", "value": "" },
+    { "key": "ticketPublicId", "value": "" }
   ]
 }
