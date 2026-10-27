@@ -849,3 +849,72 @@ Purane headers → **401** (customers aur chat dono); naye headers → customers
 Header/event ka naam badalna **breaking change** hai: frontend aur doosri services toot jati hain. Wahan naya version (`TicketCreatedV2`) banate, kuch waqt dono qubool karte, phir purana band. Hum seekhne ke daur mein hain aur koi consumer nahi, isliye seedha badla. Isi liye naam **pehle din sahi** rakhna sasta hai.
 
 ⚠️ Relay/worker **khud reload nahi hote** (runserver hota hai) — code badle to dono restart karo, warna purana worker naye events ko "bad payload" samjhega.
+
+---
+
+## Learning 17 ⭐: Redis ke 4 kaam — Pub/Sub, lock, rate limit, chat memory TTL
+
+**Date:** 27 Oct 2026 · **Lesson:** 11B · **Files:** `src/infra/cache/` (keys, pubsub, locks, ratelimit), `src/core/sse.py`, `src/core/limits.py`, `src/agents/core/streaming.py`, `agents/core/checkpointers.py::get_redis_checkpointer`, `apps/chat/` (services, exceptions), `apps/tickets/streams.py` + `api.py`, `workers/handlers/tickets.py`
+
+| # | Masla | Redis hal | Command |
+|---|---|---|---|
+| 1 | Ticket ka jawab dekhne ke liye baar baar GET (polling) | **Pub/Sub**: worker har qadam `PUBLISH` karta hai, `GET /api/tickets/{id}/stream` `SUBSCRIBE` karke SSE bhejta hai | `PUBLISH` / `SUBSCRIBE` |
+| 2 | Ek conversation mein do messages ek saath → yaadasht kharab | **Lock** per thread (chat) aur per ticket (worker) → doosri request **409 `CONVERSATION_BUSY`** | `SET key token NX EX` + Lua release |
+| 3 | Ek customer 500 messages/min → LLM kharcha + Groq hadd | **Rate limit** 10/min/customer → **429 `RATE_LIMITED`** | `INCR` + `EXPIRE NX` |
+| 4 | Chat memory Postgres mein hamesha padi rehti | **Redis checkpointer, TTL 24h** (parhne par TTL dobara); tickets Postgres hi | RedisJSON + TTL |
+
+### Khaas sabaq
+- **Pub/Sub history nahi rakhta** — der se subscribe kiya to pichli announcements gayi. Hal (`apps/tickets/streams.py`): **pehle subscribe, phir DB parho** — beech mein jo publish hua wo queue mein rehta hai; ticket pehle se answered ho to DB se foran jawab. Worker `answered` **DB commit ke baad** publish karta hai.
+- **Lock teen cheezein:** `nx=True` (taala), `ex=60` (crash par khud khule), **token + Lua script** (sirf apna taala kholo — warna expire ke baad kisi aur ka khul sakta).
+- **Streaming mein lock:** `stream_chat` lock aur rate limit **response shuru hone se pehle** check karta hai (taa ke 409/429 normal JSON ho), aur lock generator ke `finally` mein khulta hai (client beech mein chala jaye tab bhi).
+- **Rate limit = "kitni dafa"**, idempotency = "asar ek dafa" — alag cheezein. `INCR` atomic hai: ek saath 100 requests ko alag number.
+- **Memory ka bantwara:** chat = Redis (temporary, 24h), tickets = Postgres (lambi, audit, approval ka intezar). `RedisSaver` TTL **minutes** mein leta hai (`default_ttl: 1440`).
+- Saari keys `opspilot:` prefix ke saath (`keys.py`) — checkpointer ko bhi `checkpoint_prefix="opspilot:checkpoint"` diya.
+- `agents/core/streaming.py::agent_events` — graph stream ko `(event, data)` mein badalta hai; chat SSE aur worker Pub/Sub **dono** yahi use karte hain (ek jagah). `core/sse.py::sse()` SSE format, `core/limits.py` saari hadein.
+
+### Tests (27 Oct 2026) — sab pass
+| # | Test | Natija |
+|---|---|---|
+| 1 | Ticket banao, foran stream kholo | `status` → `processing` → `tool_call` → `tool_result` → **45 `token`** → `answered` (polling nahi) |
+| 2 | Answered ticket par stream | Foran `status: answered` + `answered` (DB se) |
+| 3 | Do chat messages ek saath, same conversation | **200, 409** |
+| 4 | Sara 11 messages / minute | 10 × **200**, 11wan **429** `RATE_LIMITED` |
+| 5 | Redis | 83 `opspilot:checkpoint*` keys, **TTL ≈ 86,393s** (24h); rate counter `= 12 (TTL 50s)`; koi lock baqi nahi (sab khul gaye) |
+| 6 | Postgres | ticket threads ke 43 checkpoints Postgres mein; chat (`lock-test-1`) ka Postgres mein **0** |
+
+> Note: ticket live updates ka Pub/Sub wala hissa usi din **Redis Streams** se badal diya — Learning 18.
+
+---
+
+## Learning 18 ⭐: Redis Streams + SSE best practices (replay, resume, heartbeat)
+
+**Date:** 27 Oct 2026 · **Files:** `src/infra/cache/streams.py`, `src/core/sse.py`, `src/apps/tickets/streams.py` + `api.py`, `workers/handlers/tickets.py` (Pub/Sub module `pubsub.py` hata diya)
+
+### Masla (Postman mein khud dekha)
+Stream der se khola to `processing` aur `tool_call` gayab — **Pub/Sub history nahi rakhta**, sirf "abhi" sunane wala radio hai.
+
+### Hal: Redis **Stream** = ticket ki diary (append-only log)
+| | Pub/Sub | **Stream** |
+|---|---|---|
+| History | ❌ jo gaya so gaya | ✅ har entry save (`XADD`) |
+| Der se aane wala | Aage se sunta hai | **Shuru se** sab (`XREAD` from `"0"`) |
+| Connection toota | Beech ka sab gum | **Wahin se resume** (`Last-Event-ID`) |
+| Har entry ki ID | Nahi | `1793086122728-0` (ms timestamp + sequence) |
+
+### SSE best practices jo lagaye
+1. **`id:`** har event par (Redis entry id) → browser/`EventSource` reconnect par `Last-Event-ID` header bhejta hai → server `resume_from()` (format check `\d+-\d+`, warna `"0"`) se sirf naye events.
+2. **Heartbeat** `: keep-alive` har 15s jab kuch na ho → proxies/load balancers khamosh connection nahi kaatte (comment line, client ignore karta hai). `XREAD block=15000` hi heartbeat ka waqt hai.
+3. **`retry: 3000`** → browser 3s baad khud reconnect.
+4. **Hadein:** `MAXLEN ~1000` (stream bara na ho), `EXPIRE 3600` (1 ghante baad poora stream mite), stream timeout 120s.
+5. **Fallback:** stream expire ho chuka aur ticket answered → `status` + `answered` **database** se.
+6. Final event (`answered`/`failed`) par stream band.
+
+### Tests (27 Oct 2026) — sab pass
+| # | Test | Natija |
+|---|---|---|
+| 1 | Ticket bana, **8s baad** stream khola (worker khatam) | Poori history: `processing`, `tool_call`, `tool_result`, 43 `token`, `answered` ✅ (Pub/Sub mein ye gayab hote) |
+| 2 | `Last-Event-ID` = 5wen event ki id | Sirf baqi **42** events (expected 42) ✅ |
+| 3 | Redis | `XLEN = 47`, `TTL = 3599s`, `XRANGE` mein `processing`, `tool_call get_my_order(ORD-1002)` |
+| 4 | Purana ticket (stream nahi) | `status` + `answered` DB se ✅ |
+| 5 | **Worker band**, ticket bana, stream 34s khula | `status: open` → `: keep-alive` (15s) → `: keep-alive` (30s) ✅ connection zinda |
+| 6 | Worker wapas → stream dobara khola | Worker ne 3.4s mein jawab diya; poori history replay ✅ |

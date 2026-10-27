@@ -112,7 +112,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "chat", "messages"]
             },
-            "description": "Waits for the full answer. Response:\n```json\n{\n  \"conversation_id\": \"postman-demo-1\",\n  \"reply\": \"Here are your recent orders: ...\",\n  \"tool_calls\": [{\"name\": \"list_my_orders\", \"args\": {}}],\n  \"llm_calls\": 2,\n  \"tokens\": 1366,\n  \"latency_ms\": 3780\n}\n```\n503 `ASSISTANT_UNAVAILABLE` if the LLM provider fails (rate limit, network)."
+            "description": "Waits for the full answer. Response:\n```json\n{\n  \"conversation_id\": \"postman-demo-1\",\n  \"reply\": \"Here are your recent orders: ...\",\n  \"tool_calls\": [{\"name\": \"list_my_orders\", \"args\": {}}],\n  \"llm_calls\": 2,\n  \"tokens\": 1366,\n  \"latency_ms\": 3780\n}\n```\n503 `ASSISTANT_UNAVAILABLE` if the LLM provider fails (rate limit, network).\n409 `CONVERSATION_BUSY` if the previous message in the same `conversation_id` is still being answered (Redis lock).\n429 `RATE_LIMITED` after 10 messages per customer per minute.\nChat memory is kept in Redis for 24 hours after the last message."
           }
         },
         {
@@ -207,6 +207,20 @@
             ],
             "url": { "raw": "{{baseUrl}}/api/tickets/{{ticketPublicId}}", "host": ["{{baseUrl}}"], "path": ["api", "tickets", "{{ticketPublicId}}"] },
             "description": "`status`: `open` (waiting for the worker) → `answered` (with `reply` and `answered_at`) or `failed` (worker gave up after 3 attempts). 404 if the ticket belongs to another customer."
+          }
+        },
+        {
+          "name": "Stream ticket updates (SSE, no polling)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
+              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" },
+              { "key": "Accept", "value": "text/event-stream" },
+              { "key": "Last-Event-ID", "value": "", "disabled": true, "description": "Enable and paste an event id to resume after it" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/tickets/{{ticketPublicId}}/stream", "host": ["{{baseUrl}}"], "path": ["api", "tickets", "{{ticketPublicId}}", "stream"] },
+            "description": "Live events from the worker, stored in a Redis Stream (kept 1 hour). Open it any time: you always get the **full history from the start**, then live events.\n\n| event | data |\n|---|---|\n| `status` | `{status}` — current DB status, always first (no id) |\n| `processing` | `{}` — worker started |\n| `tool_call` / `tool_result` | agent used a tool |\n| `token` | `{text}` — reply text, piece by piece (append to the bubble) |\n| `answered` | `{reply}` — full final reply (stream ends) |\n| `failed` | `{reply: \"\"}` — worker gave up (stream ends) |\n| `timeout` | nothing for 120s (stream ends) |\n\nEvery event except `status` has an `id:` (Redis entry id, e.g. `1793086122728-0`). To **resume** after a dropped connection, send header `Last-Event-ID: <last id>` — you get only newer events (browsers' EventSource does this automatically). `: keep-alive` comment lines arrive every 15s while waiting; ignore them. `retry: 3000` tells the browser to reconnect after 3s.\n\nOld ticket whose stream expired: `status` + `answered` from the database."
           }
         }
       ]

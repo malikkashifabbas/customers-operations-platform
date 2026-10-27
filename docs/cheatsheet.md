@@ -83,6 +83,17 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `r.exists(key)` | Likha hua hai? (1/0) | idempotency |
 | `r.get(key)`, `r.delete(key)`, `r.ttl(key)` | Parho, mitao, kitne second baqi | — |
 | `keys.event_done(event_id)` → `"opspilot:evt:done:<id>"` | Har key ka naam ek jagah se | `infra/cache/keys.py` |
+| `r.set(key, token, nx=True, ex=60)` | **Lock** lagao: sirf tab likho jab pehle se na ho (`nx`), 60s baad khud khule (`ex`) | `infra/cache/locks.py::acquire` |
+| `r.eval(RELEASE_SCRIPT, 1, key, token)` | Lock kholo — sirf apna (token mile to hi delete) | `locks.py::release` |
+| `with redis_lock("thread:<id>", 120) as acquired:` | Lock ka context manager: andar kaam, bahar khud khule | chat services, worker handler |
+| `pipe.incr(key); pipe.expire(key, 60, nx=True)` | **Rate limit**: is minute ki ginti +1 (atomic), key 60s baad mite | `infra/cache/ratelimit.py::allow` |
+| `r.xadd(stream, {"event": ..., "data": ...}, maxlen=1000, approximate=True)` | **Stream** mein entry jodo (id khud: `1793086122728-0` = ms timestamp-sequence), ~1000 tak rakho | `infra/cache/streams.py::append` |
+| `r.expire(stream, 3600)` | Poora stream 1 ghante baad mite | `streams.py::append` |
+| `r.xread({stream: after_id}, count=100, block=15000)` | `after_id` ke baad wali entries; kuch na ho to 15s intezar (`"0"` = shuru se) | `streams.py::read_after` |
+| `sse(event, data, event_id=entry_id)` → `id: ...` | SSE event ke saath id — browser reconnect par `Last-Event-ID` bhejta hai | `core/sse.py` |
+| `": keep-alive\n\n"` / `"retry: 3000\n\n"` | Heartbeat (proxy connection na kaate) / browser 3s baad reconnect kare | `core/sse.py` |
+| (purana) `r.publish` / `r.pubsub()` | Pub/Sub: history nahi — Lesson 11B mein use hua, phir Streams se badla | — |
+| `RedisSaver(redis_url=..., ttl={"default_ttl": 1440, "refresh_on_read": True})` + `.setup()` | LangGraph yaadasht Redis mein, 24 ghante (minutes mein) baad mite, parhne par TTL dobara | `agents/core/checkpointers.py::get_redis_checkpointer` |
 
 ---
 
