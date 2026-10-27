@@ -47,6 +47,24 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `_normalize(text)` | LLM ke `‑` (U+2011), ` `, `’` ko seedha karo, warna regex chook jaye | guards.py |
 | SSE `guardrail` / `replace` events | Frontend: inkaar ka sabab / poora bubble text badlo | `agents/core/streaming.py` |
 | `uv run python playground/lesson12_eval.py` | 16 sawal, PASS/FAIL, exit code 1 agar koi fail | playground |
+| `RemoveMessage(id=reply.id)` + `guard_feedback` + `output_retries` | 12B: bura draft mitao, wajah batao, **ek** dafa dobara likhwao (counter = infinite loop se bachao) | graph.py::guard_output |
+| `add_conditional_edges("guard_output", route_after_output, {"agent": "agent", END: END})` | Guard se wapis agent ka loop | graph.py |
+| `with_structured_output(Model, include_raw=True)` → `{"raw", "parsed", "parsing_error"}` | `raw.usage_metadata` = classifier ka kharcha | guards.py::classify_input |
+
+### 1C. Human approval — `interrupt` (Lesson 13)
+
+| Code | Kya karta hai | Kahan |
+|---|---|---|
+| `decision = interrupt({...})` | Graph **roko**, state checkpointer mein; resume par yahi line `decision` lautati hai | `tools.py::request_refund` |
+| ⚠️ `interrupt()` se pehle sirf **read-only** | Resume par tool **upar se dobara** chalta hai; paisa `interrupt()` ke **baad** | tools.py |
+| `graph.get_state(config).interrupts[0].value` | Ruka hua hai? kis cheez ki approval chahiye? | `workers/handlers/tickets.py::_run` |
+| `graph.stream(Command(resume=decision), config, context=ctx)` | Wahin se chalao jahan ruka tha | `handle_approval_decided` |
+| `tools_for(context)` + `ToolNode(ALL_TOOLS)` | Chat ko refund tool **dikhao hi mat**; ToolNode sab chala sakta hai | tools.py / graph.py |
+| `services.decide_approval(...)` = faisla + outbox event **ek transaction** | Staff API tez; worker Kafka se resume karta hai | `apps/tickets/services/tickets.py` |
+| `select_for_update()` + status dobara check | Double approval → 409, double refund → impossible | `decide_approval`, `orders.refund_order` |
+| `ROUTES = {topic: (EventClass, handler, dlq_topic)}` | Ek worker, kai event types | `run_agent_worker.py` |
+| `X-Tenant-Public-Id` + `X-Staff-Key` (`hmac.compare_digest`) | Arzi staff auth (JWT roles tak) | `core/staff.py` |
+| `uv run python playground/lesson13_approval.py` | A failed / B reject / C approve / D chat — PASS/FAIL | playground |
 
 ---
 

@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from .topics import TICKETS_ANSWERED, TICKETS_CREATED
+from .topics import TICKETS_ANSWERED, TICKETS_APPROVAL_DECIDED, TICKETS_CREATED
 
 
 class Event(BaseModel):
@@ -23,4 +23,9 @@ class TicketCreatedV1(Event):
 
 class TicketAnsweredV1(Event):
     event_type: Literal["tickets.answered"] = TICKETS_ANSWERED
+    ticket_public_id: str
+
+
+class TicketApprovalDecidedV1(Event):
+    event_type: Literal["tickets.approval_decided"] = TICKETS_APPROVAL_DECIDED
     ticket_public_id: str

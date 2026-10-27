@@ -62,15 +62,18 @@ def run_chat(*, principal: CustomerPrincipal, message: str, conversation_id: str
             raise AssistantUnavailable() from exc
 
     new_ai = [m for m in result["messages"][before + 1 :] if isinstance(m, AIMessage)]
+    # Classifier calls and rejected drafts are not in the message list, so the guards report their own usage.
+    guard_usage = result.get("guard_usage") or {"llm_calls": 0, "tokens": 0}
     return {
         "conversation_id": conversation_id,
         "reply": new_ai[-1].content if new_ai else "",
         "tool_calls": [{"name": c["name"], "args": c["args"]} for m in new_ai for c in m.tool_calls],
-        "llm_calls": len(new_ai),
-        "tokens": sum((m.usage_metadata or {}).get("total_tokens", 0) for m in new_ai),
+        "llm_calls": len([m for m in new_ai if m.usage_metadata]) + guard_usage["llm_calls"],
+        "tokens": sum((m.usage_metadata or {}).get("total_tokens", 0) for m in new_ai) + guard_usage["tokens"],
         "latency_ms": int((time.perf_counter() - started) * 1000),
         "blocked_reason": result.get("blocked_reason"),
         "output_flags": result.get("output_flags", []),
+        "output_retries": result.get("output_retries", 0),
     }
 
 

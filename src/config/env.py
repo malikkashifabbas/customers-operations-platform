@@ -26,5 +26,8 @@ class Env(BaseSettings):
     kafka_bootstrap_servers: str = "localhost:9092"
     redis_url: str = "redis://localhost:6379/0"
 
+    # Shared key for the staff approval API until JWT roles exist; unset = staff API refuses everyone.
+    staff_api_key: SecretStr | None = None
+
 
 env = Env()

@@ -112,7 +112,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "chat", "messages"]
             },
-            "description": "Waits for the full answer. Response:\n```json\n{\n  \"conversation_id\": \"postman-demo-1\",\n  \"reply\": \"Here are your recent orders: ...\",\n  \"tool_calls\": [{\"name\": \"list_my_orders\", \"args\": {}}],\n  \"llm_calls\": 2,\n  \"tokens\": 1366,\n  \"latency_ms\": 3780,\n  \"blocked_reason\": null,\n  \"output_flags\": []\n}\n```\n`blocked_reason` (input guard): `other_customer` | `prompt_injection` | `off_topic` when the question was refused before the agent ran (then `reply` is a fixed refusal and `tool_calls` is empty).\n`output_flags` (output guard): non-empty when the agent's reply had an ungrounded email / link / order number or a banned claim (\"payment link\", \"I have refunded\") and was replaced by a safe reply.\n503 `ASSISTANT_UNAVAILABLE` if the LLM provider fails (rate limit, network).\n409 `CONVERSATION_BUSY` if the previous message in the same `conversation_id` is still being answered (Redis lock).\n429 `RATE_LIMITED` after 10 messages per customer per minute.\nChat memory is kept in Redis for 24 hours after the last message."
+            "description": "Waits for the full answer. Response:\n```json\n{\n  \"conversation_id\": \"postman-demo-1\",\n  \"reply\": \"Here are your recent orders: ...\",\n  \"tool_calls\": [{\"name\": \"list_my_orders\", \"args\": {}}],\n  \"llm_calls\": 2,\n  \"tokens\": 1366,\n  \"latency_ms\": 3780,\n  \"blocked_reason\": null,\n  \"output_flags\": [],\n  \"output_retries\": 0\n}\n```\n`blocked_reason` (input guard): `other_customer` | `prompt_injection` | `off_topic` when the question was refused before the agent ran (then `reply` is a fixed refusal and `tool_calls` is empty).\n`output_flags` (output guard): non-empty when the agent's reply had an ungrounded email / link / order number or a banned claim (\"payment link\", \"I have refunded\") The agent first gets **one rewrite** with the reason (`output_retries: 1`); only if the rewrite is still unsafe is it replaced by a safe reply. `llm_calls` / `tokens` include the guard classifier and rejected drafts.\n503 `ASSISTANT_UNAVAILABLE` if the LLM provider fails (rate limit, network).\n409 `CONVERSATION_BUSY` if the previous message in the same `conversation_id` is still being answered (Redis lock).\n429 `RATE_LIMITED` after 10 messages per customer per minute.\nChat memory is kept in Redis for 24 hours after the last message."
           }
         },
         {
@@ -157,7 +157,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "chat", "messages", "stream"]
             },
-            "description": "Server-Sent Events (`text/event-stream`). Each event is `event: <type>` + `data: <json>` + blank line:\n\n| event | data | frontend action |\n|---|---|---|\n| `start` | `{conversation_id}` | save the id for the next message |\n| `tool_call` | `{name, args}` | show \"checking your orders...\" |\n| `tool_result` | `{name, content}` | optional (debug) |\n| `token` | `{text}` | append text to the chat bubble |\n| `guardrail` | `{blocked_reason}` | question refused before the agent ran; a `token` with the refusal follows |\n| `replace` | `{text}` | output guard caught an unsafe reply: **replace** the whole bubble text with `text` |\n| `done` | `{conversation_id, latency_ms}` | stop the typing indicator |\n| `error` | `{code, message}` | show the message |\n\nBrowser: use `fetch()` + `response.body.getReader()` (EventSource only supports GET)."
+            "description": "Server-Sent Events (`text/event-stream`). Each event is `event: <type>` + `data: <json>` + blank line:\n\n| event | data | frontend action |\n|---|---|---|\n| `start` | `{conversation_id}` | save the id for the next message |\n| `tool_call` | `{name, args}` | show \"checking your orders...\" |\n| `tool_result` | `{name, content}` | optional (debug) |\n| `token` | `{text}` | append text to the chat bubble |\n| `guardrail` | `{blocked_reason}` | question refused before the agent ran; a `token` with the refusal follows |\n| `reset` | `{}` | output guard rejected the draft and asked for one rewrite: **clear** the bubble, new tokens follow |\n| `replace` | `{text}` | output guard caught an unsafe reply: **replace** the whole bubble text with `text` |\n| `done` | `{conversation_id, latency_ms}` | stop the typing indicator |\n| `error` | `{code, message}` | show the message |\n\nBrowser: use `fetch()` + `response.body.getReader()` (EventSource only supports GET)."
           }
         }
       ]
@@ -220,7 +220,7 @@
               { "key": "Last-Event-ID", "value": "", "disabled": true, "description": "Enable and paste an event id to resume after it" }
             ],
             "url": { "raw": "{{baseUrl}}/api/tickets/{{ticketPublicId}}/stream", "host": ["{{baseUrl}}"], "path": ["api", "tickets", "{{ticketPublicId}}", "stream"] },
-            "description": "Live events from the worker, stored in a Redis Stream (kept 1 hour). Open it any time: you always get the **full history from the start**, then live events.\n\n| event | data |\n|---|---|\n| `status` | `{status}` — current DB status, always first (no id) |\n| `processing` | `{}` — worker started |\n| `tool_call` / `tool_result` | agent used a tool |\n| `token` | `{text}` — reply text, piece by piece (append to the bubble) |\n| `guardrail` | `{blocked_reason}` — question refused before the agent ran |\n| `replace` | `{text}` — output guard replaced an unsafe reply: swap the bubble text |\n| `answered` | `{reply}` — full final reply (stream ends) |\n| `failed` | `{reply: \"\"}` — worker gave up (stream ends) |\n| `timeout` | nothing for 120s (stream ends) |\n\nEvery event except `status` has an `id:` (Redis entry id, e.g. `1793086122728-0`). To **resume** after a dropped connection, send header `Last-Event-ID: <last id>` — you get only newer events (browsers' EventSource does this automatically). `: keep-alive` comment lines arrive every 15s while waiting; ignore them. `retry: 3000` tells the browser to reconnect after 3s.\n\nOld ticket whose stream expired: `status` + `answered` from the database."
+            "description": "Live events from the worker, stored in a Redis Stream (kept 1 hour). Open it any time: you always get the **full history from the start**, then live events.\n\n| event | data |\n|---|---|\n| `status` | `{status}` — current DB status, always first (no id) |\n| `processing` | `{}` — worker started |\n| `tool_call` / `tool_result` | agent used a tool |\n| `token` | `{text}` — reply text, piece by piece (append to the bubble) |\n| `guardrail` | `{blocked_reason}` — question refused before the agent ran |\n| `replace` | `{text}` — output guard replaced an unsafe reply: swap the bubble text |\n| `reset` | `{}` — output guard rejected a draft: clear the bubble, the rewrite's tokens follow |\n| `approval_required` | `{type, order_number, amount, reason, reply}` — agent paused for a staff refund approval; stream ends while waiting (status `waiting_approval`) |\n| `approval_decided` | `{approved}` — staff decided; the agent resumes and the usual events follow |\n| `answered` | `{reply}` — full final reply (stream ends) |\n| `failed` | `{reply: \"\"}` — worker gave up (stream ends) |\n| `timeout` | nothing for 120s (stream ends) |\n\nEvery event except `status` has an `id:` (Redis entry id, e.g. `1793086122728-0`). To **resume** after a dropped connection, send header `Last-Event-ID: <last id>` — you get only newer events (browsers' EventSource does this automatically). `: keep-alive` comment lines arrive every 15s while waiting; ignore them. `retry: 3000` tells the browser to reconnect after 3s.\n\nOld ticket whose stream expired: `status` + `answered` from the database."
           }
         }
       ]
@@ -493,6 +493,199 @@
             },
             "description": "Allowed, so the agent answers in Roman Urdu. If its reply mentions a payment link anyway, the output guard replaces it and `output_flags` shows why."
           }
+        }
+      ]
+    },
+    {
+      "name": "Staff approvals (Lesson 13)",
+      "description": "The agent pauses (LangGraph `interrupt()`) when a ticket asks for a refund of a paid order. Staff see it here and decide; the decision goes through the outbox + Kafka (`tickets.approval_decided`) and the worker resumes the agent with `Command(resume=decision)`.\n\n**Auth (temporary until JWT roles):** `X-Tenant-Public-Id` + `X-Staff-Key`. Put the `STAFF_API_KEY` value from your `.env` into the environment variable `staffApiKey` (it is empty in git on purpose).\n\n**Flow:** Tickets → *Create ticket* with body `Please refund ORD-1001, I was charged twice.` → stream ends with `approval_required` → *List* → *Approve* or *Reject* → stream again → `approval_decided` … `answered`.",
+      "item": [
+        {
+          "name": "List tickets waiting for approval",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-Public-Id",
+                "value": "{{tenantPublicId}}"
+              },
+              {
+                "key": "X-Staff-Key",
+                "value": "{{staffApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/tickets/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "tickets",
+                ""
+              ]
+            },
+            "description": "Oldest first. Each item: `public_id, subject, body, status, approval_request {type, order_number, amount, reason}, approval_decision (null), customer_name, created_at`. Saves the first one as `ticketPublicId`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 && pm.response.json().length) {",
+                  "  pm.collectionVariables.set('ticketPublicId', pm.response.json()[0].public_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve refund",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-Public-Id",
+                "value": "{{tenantPublicId}}"
+              },
+              {
+                "key": "X-Staff-Key",
+                "value": "{{staffApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/tickets/{{ticketPublicId}}/decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "tickets",
+                "{{ticketPublicId}}",
+                "decision"
+              ]
+            },
+            "description": "202: decision saved + `tickets.approval_decided` event (one transaction). The worker resumes the agent: the refund tool refunds the order, the agent tells the customer. Sending again → 409 `APPROVAL_NOT_PENDING`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approved\": true,\n  \"reviewer\": \"kashif\",\n  \"note\": \"Duplicate charge confirmed.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 accepted', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject refund",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-Public-Id",
+                "value": "{{tenantPublicId}}"
+              },
+              {
+                "key": "X-Staff-Key",
+                "value": "{{staffApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/tickets/{{ticketPublicId}}/decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "tickets",
+                "{{ticketPublicId}}",
+                "decision"
+              ]
+            },
+            "description": "Same as approve; the order stays paid and the agent passes the staff note to the customer.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approved\": false,\n  \"reviewer\": \"kashif\",\n  \"note\": \"We found only one charge on your card.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Wrong staff key (expect 401)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-Public-Id",
+                "value": "{{tenantPublicId}}"
+              },
+              {
+                "key": "X-Staff-Key",
+                "value": "wrong-key"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/tickets/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "tickets",
+                ""
+              ]
+            },
+            "description": "Header `X-Staff-Key` does not match `STAFF_API_KEY` → 401. Unset `STAFF_API_KEY` in .env → the staff API refuses everyone."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },

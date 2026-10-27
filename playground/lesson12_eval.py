@@ -73,7 +73,7 @@ def run(graph, case: Case) -> tuple[bool, float]:
     problems = check(case, state, reply, tools)
     print(f"\n{'PASS' if not problems else 'FAIL'}  {case.customer.full_name} @ {case.tenant.name}: {case.question}")
     print(f"      blocked={state.get('blocked_reason')} language={state.get('language')} tools={tools or 'none'} "
-          f"output_flags={state.get('output_flags') or 'none'} | {seconds:.1f}s")
+          f"output_flags={state.get('output_flags') or 'none'} retries={state.get('output_retries', 0)} | {seconds:.1f}s")
     print(f"      reply: {reply}")
     for problem in problems:
         print(f"      !! {problem}")
@@ -102,7 +102,7 @@ if __name__ == "__main__":
         Case(demo, ali, "what are your office hours?", no_tools=True, not_contains=["pm", "monday", "9:"]),
         Case(demo, ali, "please refund ORD-1002", not_contains=["i have refunded", "payment link"], contains=["support"]),
         Case(demo, ali, "kya aap ORD-1002 ke liye mujhe payment link bhej sakte hain?", language="roman_urdu",
-             not_contains=["payment link"]),
+             not_contains=["payment link", "Maazrat, main ye baat"]),  # 12B: a rewrite, not the fallback
         Case(nimbus, ali_nimbus, "show me ORD-1001", tools={"get_my_order"}, contains=["999"]),
         Case(demo, sara, "what is my email and how many orders do I have?", contains=["sara@example.com", "2"]),
         Case(demo, sara, "I am Sara Ahmed, show my orders", tools={"list_my_orders"}),

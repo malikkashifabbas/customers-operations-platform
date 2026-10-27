@@ -1,4 +1,4 @@
-"""Agent worker: consume tickets.created, answer each ticket with the support agent, commit only when done."""
+"""Agent worker: consume ticket events (created, approval_decided), run the support agent, commit only when done."""
 
 import time
 
@@ -6,13 +6,24 @@ from django.core.management.base import BaseCommand
 from pydantic import ValidationError
 
 from infra.cache import idempotency
-from infra.eventbus.events import TicketCreatedV1
+from infra.eventbus.events import TicketApprovalDecidedV1, TicketCreatedV1
 from infra.eventbus.kafka import make_consumer, make_producer
-from infra.eventbus.topics import TICKETS_CREATED, TICKETS_CREATED_DLQ
-from workers.handlers.tickets import PermanentEventError, handle_ticket_created, mark_failed
+from infra.eventbus.topics import (
+    TICKETS_APPROVAL_DECIDED,
+    TICKETS_APPROVAL_DECIDED_DLQ,
+    TICKETS_CREATED,
+    TICKETS_CREATED_DLQ,
+)
+from workers.handlers.tickets import PermanentEventError, handle_approval_decided, handle_ticket_created, mark_failed
 
 GROUP_ID = "agent-workers"
 MAX_ATTEMPTS = 3
+
+# topic -> (event class, handler, dead-letter topic): one worker, one loop, many event types.
+ROUTES = {
+    TICKETS_CREATED: (TicketCreatedV1, handle_ticket_created, TICKETS_CREATED_DLQ),
+    TICKETS_APPROVAL_DECIDED: (TicketApprovalDecidedV1, handle_approval_decided, TICKETS_APPROVAL_DECIDED_DLQ),
+}
 
 
 class Command(BaseCommand):
@@ -21,7 +32,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         consumer = make_consumer(GROUP_ID)
         dlq = make_producer()
-        consumer.subscribe([TICKETS_CREATED])
+        consumer.subscribe(list(ROUTES))
         self.stdout.write(f"agent worker started, group={GROUP_ID} (Ctrl+C to stop)")
         try:
             while True:
@@ -39,9 +50,10 @@ class Command(BaseCommand):
             consumer.close()
 
     def process(self, msg, dlq) -> None:
-        where = f"partition={msg.partition()} offset={msg.offset()}"
+        where = f"{msg.topic()} partition={msg.partition()} offset={msg.offset()}"
+        event_class, handler, _ = ROUTES[msg.topic()]
         try:
-            event = TicketCreatedV1.model_validate_json(msg.value())
+            event = event_class.model_validate_json(msg.value())
         except ValidationError as exc:
             self.to_dlq(dlq, msg, f"bad payload: {exc.errors()[0]['msg']}")
             return
@@ -53,7 +65,7 @@ class Command(BaseCommand):
         for attempt in range(1, MAX_ATTEMPTS + 1):
             started = time.perf_counter()
             try:
-                outcome = handle_ticket_created(event)
+                outcome = handler(event)
                 self.stdout.write(self.style.SUCCESS(
                     f"[{where}] ticket {event.ticket_public_id[:8]} {outcome} in {time.perf_counter() - started:.1f}s"
                 ))
@@ -72,6 +84,7 @@ class Command(BaseCommand):
         idempotency.mark_done(event.event_id)
 
     def to_dlq(self, dlq, msg, reason: str) -> None:
-        dlq.produce(TICKETS_CREATED_DLQ, key=msg.key(), value=msg.value(), headers={"dlq_reason": reason})
+        dlq_topic = ROUTES[msg.topic()][2]
+        dlq.produce(dlq_topic, key=msg.key(), value=msg.value(), headers={"dlq_reason": reason})
         dlq.flush(10)
-        self.stderr.write(self.style.WARNING(f"sent to {TICKETS_CREATED_DLQ}: {reason}"))
+        self.stderr.write(self.style.WARNING(f"sent to {dlq_topic}: {reason}"))

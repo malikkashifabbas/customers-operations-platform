@@ -4,7 +4,7 @@
 > Ye project ki permanent history hai — kya bana, kyun bana, kahan hai, aur agla qadam kya hai.
 > **Har lesson mukammal hone par is file ko update karna lazmi hai** (neeche "Lesson log" aur "Current state").
 
-**Last updated:** 27 Oct 2026 — after Lesson 12 (Guardrails: input guard + refuse + output guard, prompt v3, spending summary tool, PASS/FAIL eval 16/16). Lesson 12 abhi uncommitted.
+**Last updated:** 27 Oct 2026 — after Lessons 12B (output guard rewrite loop) + 13 (refund approvals with `interrupt`, staff API, Kafka resume). 12B + 13 abhi uncommitted.
 
 ---
 
@@ -45,6 +45,7 @@
 | Temporary memory | **Redis 8** | Chat memory (TTL), cache, locks, idempotency, pub/sub |
 | Business logic | Sirf `services/` (likhna) aur `selectors.py` (parhna) | Ek rule ek jagah — API ho ya AI agent |
 | Guardrails | Graph nodes: `guard_input` (regex → LLM classifier) + `refuse` (fixed text) + `guard_output` (code grounding); **fail-open** | Prompt = darkhwast, code = guarantee; asal security tools (`runtime.context`) mein hai |
+| Paisa wale actions | Tool ke andar `interrupt()` (read-only checks pehle, action baad mein) + staff decision → outbox + Kafka → worker `Command(resume)`; sirf ticket channel | LLM paisa nahi hila sakta; insaan ki haan ghanton baad bhi aa sakti hai; state Postgres checkpointer mein |
 
 ## 4. Environment facts
 
@@ -84,7 +85,7 @@
 opspilot/
 ├── MEMORY.md              ← ye file (project ki yaadasht)
 ├── CLAUDE.md              ← AI ke liye: pehle MEMORY.md parho
-├── docs/learnings.md      ← Learning 1–19 (har lesson ka sabaq)
+├── docs/learnings.md      ← Learning 1–21 (har lesson ka sabaq)
 ├── docs/walkthroughs/     ← zaroori files ki line-by-line wazahat + "senior ke sawal" (5-step template); har nayi walkthrough yahan
 ├── docs/cheatsheet.md     ← sab se zaroori code lines (LangGraph, Kafka, outbox, events, Redis, workers) — naya concept aaye to yahan bhi line jodo
 ├── docker-compose.yml     ← postgres+pgvector, redis, kafka, kafka-ui
@@ -128,6 +129,8 @@ opspilot/
 | 5 | customers app | Pehli API (Ninja), tenant guard, DomainError, unique phone per tenant; 10 tests pass incl. tenant isolation | L6, L7 |
 | — | Git | Commit `7a92e22` pushed to GitHub (Lessons 1–5) | — |
 | — | Project memory | `MEMORY.md` + `CLAUDE.md` banaye; commit `69ee763` pushed | — |
+| 13 | Human approval (`interrupt`) | `request_refund` tool (read-only checks → `interrupt({type, order_number, amount, reason})` → `orders.refund_order` with `select_for_update`); `SupportContext.channel` (chat/ticket) + `tools_for()` (chat never gets the refund tool); **`system.v4.md`** (`{capabilities}` from bound tools, `{refund_rule}` per channel); Ticket `waiting_approval` + `approval_request`/`approval_decision` (migration `tickets.0002`); `decide_approval` (lock + 409 `APPROVAL_NOT_PENDING` + outbox `tickets.approval_decided`); **`staff_api.py`** `GET /api/staff/tickets/`, `POST /{id}/decision` with `core/staff.py` (`X-Staff-Key`, env `STAFF_API_KEY`); worker `ROUTES` (created + approval_decided, per-topic DLQ), `_run()` saves answer OR approval request, `Command(resume=...)`; stream pauses at `approval_required` only while undecided; output guard allows refund claims after `refund_status: done`; Postman *Staff approvals* folder (`staffApiKey` secret, empty in git); tests: `lesson13_approval.py` 4/4, E2E Kafka approve→refunded, 409, 401, eval 16/16 | L21 ⭐ |
+| 12B | Output guard rewrite | `guard_output`: bad draft → `RemoveMessage` + `guard_feedback` (`feedback_for`) → back to agent once (`MAX_OUTPUT_RETRIES=1`), then same-id fallback; SSE `reset`; `guard_usage` (classifier via `include_raw=True` + rejected drafts) in API `llm_calls`/`tokens`; `output_retries` in chat JSON; payment-link case now rewrites instead of fallback | L20 |
 | 12 | Guardrails + prompt v3 | `agents/domains/support/`: **`state.py`** (`SupportState` = messages + `language`, `blocked_reason`, `output_flags`), **`guards.py`** (free email/phone check → LLM classifier `with_structured_output(InputVerdict)`; fixed refusals per reason × language; `check_output` grounding of emails/links/ORD + banned phrases; `_normalize` for U+2011 hyphens), `prompts/input_guard.v1.md`, **`system.v3.md`** (exact tool list, no pages/links, `{reply_language}`); graph `guard_input → agent/refuse`, `tools_condition` path map `END → guard_output` (same-id replace), fail-open; tool `get_my_spending_summary` (selector `Sum`/`Count` GROUP BY); env `LLM_GUARD_MODEL` (optional) + `get_chat_model(model=)`; SSE events `guardrail` / `replace`; chat JSON `blocked_reason` + `output_flags`; Postman *Guardrails* folder; `playground/lesson12_eval.py` **16/16 PASS** (avg 7.1s vs 2.4s v2) | L19 ⭐ |
 | 11B+ | Redis Streams (best practice) | Ticket live updates Pub/Sub se **Redis Streams** par (`infra/cache/streams.py`: XADD maxlen~1000 + EXPIRE 1h, XREAD block); SSE `id:` + `Last-Event-ID` resume + `: keep-alive` heartbeat + `retry:` (`core/sse.py`); DB fallback for expired streams; `pubsub.py` hataya; 6 tests pass (late replay, resume 42/42, heartbeat, reconnect after worker restart) | L18 ⭐ |
 | 11B | Redis ke 4 kaam | `langgraph-checkpoint-redis 0.5.2`; `infra/cache/` pubsub (Subscription: subscribe pehle, DB baad), locks (SET NX EX + Lua token release, `redis_lock` CM), ratelimit (INCR + EXPIRE NX); `core/sse.py`, `core/limits.py`; `agents/core/streaming.py::agent_events` (chat + worker share); `get_redis_checkpointer()` (TTL 1440 min, refresh_on_read, prefix `opspilot:checkpoint`) — **chat memory ab Redis**, tickets Postgres; worker `stream` + Pub/Sub + per-ticket lock; `GET /api/tickets/{id}/stream`; chat 409/429; Postman stream request; 6 tests pass | L17 ⭐ |
@@ -148,12 +151,14 @@ opspilot/
 - ✅ Tickets live stream (Redis Streams: replay + resume + heartbeat) — polling ki zaroorat nahi.
 - ✅ **Event-driven tickets** (Lesson 11A): outbox pattern, Kafka relay, agent worker, Redis idempotency, DLQ. `apps/tickets` auth `apps.chat.auth.CustomerHeaders` import karta hai (JWT lesson mein shared auth banegi).
 - ✅ Guardrails (Lesson 12): doosre customer / prompt injection / off-topic → fixed refusal (no tools); ghadhe hue links/emails/ORD aur "payment link" jaise jumle → safe fallback; zabaan code tay karta hai; totals DB `SUM()` se.
-- ⚠️ Output guard bhaunda hai: sahi inkaar ("payment link nahi bhej sakta") bhi fallback ban jata hai → aage **retry with feedback**. Grounding sirf email/link/ORD dekhti hai. API ke `tokens` mein classifier ka kharcha shamil nahi. Latency +1 LLM call (avg 7.1s eval mein, Groq free-tier throttle bhi) → `LLM_GUARD_MODEL` chhota model.
+- ✅ 12B: output guard pehle ek dafa dobara likhwata hai (feedback ke saath), phir fallback; API `tokens` mein guards ka kharcha shamil.
+- ✅ 13: refund sirf staff approval se (`interrupt` → `waiting_approval` → staff API → Kafka `tickets.approval_decided` → `Command(resume)`); chat mein refund tool nahi.
+- ⚠️ Grounding sirf email/link/ORD dekhti hai. Latency +1 LLM call (eval avg 7–10s, Groq free-tier throttle) → `LLM_GUARD_MODEL` chhota model. Staff auth arzi (`X-Staff-Key`) — JWT roles lesson mein. Staff ko naye approval ki notification nahi jati (abhi list poll karna padta hai) — aage `tickets.approval_requested` event. **Code badlo to SAARE workers restart karo** (purane worker ne consumer group mein ticket chura liya tha).
 - ⚠️ Auth abhi **arzi** hai (`X-Tenant-Public-Id` + `X-Customer-Public-Id` headers) — JWT lesson mein badlega.
 - ✅ 27 Oct 2026: saare bahar wale naam database se milaye — headers `X-Tenant-Public-Id` / `X-Customer-Public-Id`, event fields `tenant_public_id` / `ticket_public_id` (purane `X-Tenant-ID` ab 401). Purane outbox rows / DLQ message purani shakal mein hain — replay karoge to "bad payload" DLQ.
 - ⚠️ Agent jo nahi jaanta (office hours, policies) uske liye RAG chahiye — abhi wo "support team se rabta karein" kehta hai.
 - ❌ Abhi tak nahi: Redis checkpointer, Kafka producer/consumer code, Redis code, tests folder, ruff/mypy, CI.
-- Git: pushed — `7a92e22` (Lessons 1–5), `69ee763` (MEMORY.md + CLAUDE.md), `3926d6d` (Lesson 6), `3440413` (Lesson 7), `c134dd1` (Lessons 8–9; message mein galti se quotes + `-m` aa gaye — pushed hai, isliye chhor diya, force push nahi), `fb17ed1` (Lesson 10, saaf message ✅), `17d9619` (Lesson 11A + naming fix + cheatsheet/walkthroughs), `0c76234` (Lesson 11B + Streams + roadmap decision). **Uncommitted:** Lesson 12. User **SourceTree** se khud commit/push karta hai — commit message SourceTree ke liye do: pehli line title, khali line, phir tafseel (bina quotes/`-m`).
+- Git: pushed — `7a92e22` (Lessons 1–5), `69ee763` (MEMORY.md + CLAUDE.md), `3926d6d` (Lesson 6), `3440413` (Lesson 7), `c134dd1` (Lessons 8–9; message mein galti se quotes + `-m` aa gaye — pushed hai, isliye chhor diya, force push nahi), `fb17ed1` (Lesson 10, saaf message ✅), `17d9619` (Lesson 11A + naming fix + cheatsheet/walkthroughs), `0c76234` (Lesson 11B + Streams + roadmap decision), `fe17e6f` (Lesson 12 guardrails). **Uncommitted:** 12B + 13. User **SourceTree** se khud commit/push karta hai — commit message SourceTree ke liye do: pehli line title, khali line, phir tafseel (bina quotes/`-m`).
 - `playground/` = seekhne ki files (git mein, magar project ka hissa nahi); asal code `src/` mein.
 
 ## 8. Next steps (roadmap)
@@ -168,9 +173,9 @@ opspilot/
 | ~~11A~~ | ✅ Kafka event flow (outbox, relay, worker, idempotency, DLQ) — ho gaya (26 Oct 2026) |
 | ~~11B~~ | ✅ Redis: Pub/Sub live ticket stream, locks, rate limit, chat memory TTL — ho gaya (27 Oct 2026) |
 | ~~12~~ | ✅ Guardrails + prompt v3 + spending summary + PASS/FAIL eval — ho gaya (27 Oct 2026) |
-| 12B (chhota, optional) | Output guard **retry with feedback** (ek dafa agent ko wajah bata kar dobara likhwao, phir fallback) + classifier ka kharcha API `tokens` mein |
-| **13** | Human approval (`interrupt`) — refund tool sirf insaan ki haan par |
-| 14 | Supervisor + subgraphs (billing / tech / knowledge) |
+| ~~12B~~ | ✅ Output guard retry with feedback + guard usage — ho gaya (27 Oct 2026) |
+| ~~13~~ | ✅ Human approval (`interrupt`) — refund sirf staff ki haan par, Kafka resume — ho gaya (27 Oct 2026) |
+| **14** | **Supervisor + subgraphs** (billing / tech / knowledge) |
 | — | Orders REST API |
 | 10+ | Kafka outbox + consumer, interrupt approvals, subgraphs/Send/Command (supervisor), RAG (pgvector), Text-to-SQL, evals (LangSmith), JWT auth, tests, CI |
 | Later | **Extract AI service (Kafka contracts)**: `agents/` + `workers/` alag deployable service; tools ORM ki jagah backend API (service JWT); `tickets.answered` backend consume kare (eventual consistency); shared/versioned event schemas. Hypernim-style service-to-service Kafka seekhna |

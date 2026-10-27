@@ -13,4 +13,18 @@ class TicketIn(Schema):
 class TicketOut(ModelSchema):
     class Meta:
         model = Ticket
-        fields = ["public_id", "subject", "body", "status", "reply", "created_at", "answered_at"]
+        fields = ["public_id", "subject", "body", "status", "reply", "approval_request", "created_at", "answered_at"]
+
+
+class StaffTicketOut(ModelSchema):
+    customer_name: str = Field(alias="customer.full_name")
+
+    class Meta:
+        model = Ticket
+        fields = ["public_id", "subject", "body", "status", "approval_request", "approval_decision", "created_at"]
+
+
+class ApprovalIn(Schema):
+    approved: bool
+    reviewer: str = Field(min_length=1, max_length=100)
+    note: str = Field(default="", max_length=500)

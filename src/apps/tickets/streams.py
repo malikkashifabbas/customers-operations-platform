@@ -11,6 +11,7 @@ from infra.cache import keys, streams
 from .models import Ticket, TicketStatus
 
 FINAL_EVENTS = {"answered", "failed"}
+PAUSE_EVENT = "approval_required"
 _STREAM_ID = re.compile(r"^\d+-\d+$")
 
 
@@ -39,6 +40,12 @@ def ticket_events(ticket: Ticket, after_id: str = "0") -> Iterator[str]:
         for entry_id, event, data in entries:
             after_id = entry_id
             yield sse(event, data, event_id=entry_id)
-            if event in FINAL_EVENTS:
+            if event in FINAL_EVENTS or (event == PAUSE_EVENT and _still_waiting(ticket)):
                 return
     yield sse("timeout", {"message": "No update yet; reconnect or fetch the ticket again later."})
+
+
+def _still_waiting(ticket: Ticket) -> bool:
+    # A replayed approval_required is not the end if staff already decided: the resumed run's events follow it.
+    ticket.refresh_from_db(fields=["status", "approval_decision"])
+    return ticket.status == TicketStatus.WAITING_APPROVAL and ticket.approval_decision is None

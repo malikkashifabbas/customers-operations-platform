@@ -7,6 +7,7 @@ from core.models import TenantScopedModel
 
 class TicketStatus(models.TextChoices):
     OPEN = "open", "Open"
+    WAITING_APPROVAL = "waiting_approval", "Waiting for staff approval"
     ANSWERED = "answered", "Answered"
     FAILED = "failed", "Failed"
 
@@ -18,6 +19,9 @@ class Ticket(TenantScopedModel):
     status = models.CharField(max_length=16, choices=TicketStatus.choices, default=TicketStatus.OPEN)
     reply = models.TextField(blank=True)
     answered_at = models.DateTimeField(null=True, blank=True)
+    # What the agent asked staff to approve (from interrupt()), and what staff decided; the decision resumes the graph.
+    approval_request = models.JSONField(null=True, blank=True)
+    approval_decision = models.JSONField(null=True, blank=True)
 
     class Meta:
         indexes = [

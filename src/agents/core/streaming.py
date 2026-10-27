@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable, Iterator
 
-from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, RemoveMessage, ToolMessage
 
 STREAM_MODES = ["messages", "updates"]
 
@@ -15,11 +15,15 @@ def agent_events(stream: Iterable) -> Iterator[tuple[str, dict]]:
                 yield "token", {"text": chunk.content}
         elif mode == "updates":
             for node, update in data.items():
+                if node == "__interrupt__":
+                    continue  # a tuple of Interrupt objects, not a dict; the caller reads it from graph.get_state()
                 if node == "guard_input" and (update or {}).get("blocked_reason"):
                     yield "guardrail", {"blocked_reason": update["blocked_reason"]}
                 for msg in (update or {}).get("messages", []):
                     if node == "refuse":
                         yield "token", {"text": msg.content}  # fixed text, no LLM, so it arrives in one piece
+                    elif node == "guard_output" and isinstance(msg, RemoveMessage):
+                        yield "reset", {}  # draft rejected: client clears the bubble, the rewrite's tokens follow
                     elif node == "guard_output":
                         yield "replace", {"text": msg.content}  # tokens already shown were unsafe: client swaps them
                     elif isinstance(msg, AIMessage):

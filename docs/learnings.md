@@ -978,3 +978,102 @@ graph TD
 - Grounding check sirf email/link/ORD dekhta hai — "naya order place kar lo" jaisi salah nahi pakadta.
 - `llm_calls`/`tokens` API response mein classifier ka kharcha shamil **nahi** (wo messages mein nahi jata); refusal ko `llm_calls: 1, tokens: 0` dikhata hai.
 - Latency: eval avg 2.4s (v2) → 7.1s (v3). Har sawal par +1 LLM call, aur peeche peeche 16 sawal Groq free tier ki rate limit chhoo lete hain. `LLM_GUARD_MODEL=groq:llama-3.1-8b-instant` se classifier tez bhi hoga aur Groq ki **alag model ki alag limit** bhi milegi.
+
+## Learning 20: Output guard ka dobara-likhwao loop (12B) + guards ka asli kharcha
+
+**Date:** 27 Oct 2026 · **Files:** `agents/domains/support/graph.py` (`guard_output`, `route_after_output`), `state.py` (`guard_feedback`, `output_retries`, `guard_usage`), `guards.py` (`feedback_for`, `include_raw`), `agents/core/streaming.py` (`reset`), `apps/chat/services.py`
+
+### Masla
+Lesson 12 mein agent ne sahi inkaar likha *"payment link nahi bhej sakta"*, lekin sirf "payment link" lafz ki wajah se seedha fallback chala gaya. Guard ne bhaunde andaaz mein customer ka achha jawab bhi cheen liya.
+
+### Hal: pehle wajah batao, ek dafa dobara likhwao, phir fallback
+```mermaid
+graph TD
+  agent -->|final answer| guard_output
+  guard_output -->|clean| END
+  guard_output -->|"bad + retries < 1: RemoveMessage + feedback"| agent
+  guard_output -->|"bad again: same-id fallback"| END
+```
+| Qadam | Code | Kyun |
+|---|---|---|
+| Bura draft **history se mitao** | `RemoveMessage(id=reply.id)` | Warna dobara likhte waqt LLM apna hi bura jawab dekh kar dohra deta |
+| **Wajah** state mein | `guard_feedback = feedback_for(flags)` → `do not use the words "payment link" at all, not even to say you cannot do it` | Flag (`banned_phrase:payment link`) code ki zabaan hai; LLM ko seedhi hidayat chahiye |
+| Agent prompt ke aakhir mein | `prompt += "Your previous reply was rejected ... {feedback}"` | Ye hidayat sirf is dafa ke liye hai, permanent rule nahi |
+| **Counter** | `output_retries` + `MAX_OUTPUT_RETRIES = 1` | Counter ke bagair agent aur guard hamesha ghoomte rehte (**infinite loop**); LangGraph ka `recursion_limit` (25) aakhir mein error deta |
+| Reset | `guard_input` har naye message par `output_retries=0`, `guard_feedback=None` | State checkpointer mein yaad rehti hai; reset na karo to agle sawal par retry ka mauqa hi nahi milta |
+
+### Streaming: naya `reset` event
+Pehle draft ke tokens customer ki screen par aa chuke hote hain. `reset` ka matlab hai **bubble khali karo**, naye tokens aa rahe hain. `replace` sirf aakhri fallback ke liye hai.
+
+### Guards ka asli kharcha
+`with_structured_output(InputVerdict, include_raw=True)` sirf Pydantic object nahi, `{"raw": AIMessage, "parsed": ..., "parsing_error": ...}` deta hai. Is `raw` mein `usage_metadata` hota hai. Classifier aur mitaye gaye drafts messages mein nahi hote, is liye unka hisaab `guard_usage` mein rakhte hain. API `llm_calls`/`tokens` ab poora kharcha dikhati hai. Refusal ab `llm_calls: 1` (sirf classifier) dikhata hai.
+
+### Test
+Payment link wala sawal: `output_flags: ['banned_phrase:payment link', 'banned_phrase:link bhej'], output_retries: 1`, aur jawab **fallback nahi** balke naya sahi jawab tha: *"main is chat mein payment se mutalliq koi cheez bhej nahi sakta. Aap support ticket khol kar..."*. `llm_calls: 3` = classifier + bura draft + dobara likha hua.
+
+## Learning 21 ⭐: Human-in-the-loop — `interrupt()` + `Command(resume=...)` + Kafka
+
+**Date:** 27 Oct 2026 · **Files:** `agents/domains/support/tools.py` (`request_refund`, `tools_for`), `context.py` (`channel`), `prompts/system.v4.md`, `graph.py` (`REFUND_RULE`, `_capabilities`), `apps/orders/services/orders.py` (`refund_order`), `apps/tickets/` (model fields + migration `0002`, `services.decide_approval`, `staff_api.py`, `streams.py`), `core/staff.py`, `infra/eventbus/` (topic + `TicketApprovalDecidedV1`), `workers/handlers/tickets.py` (`_run`, `handle_approval_decided`), `run_agent_worker.py` (`ROUTES`)
+
+### Masla
+Refund **paisa** hai. LLM ke kehne par paisa wapis nahi hona chahiye. Insaan (staff) ki haan zaroori hai, aur wo haan ghanton baad bhi aa sakti hai.
+
+### `interrupt()` kya karta hai (sab se zaroori)
+```python
+decision = interrupt({"type": "refund_approval", "order_number": ..., "amount": ..., "reason": ...})
+```
+1. Graph **wahin ruk jata hai** aur poori state checkpointer (Postgres) mein save ho jati hai. Process band bhi ho jaye to koi farq nahi.
+2. `graph.get_state(config).interrupts[0].value` mein wahi dict hoti hai jo staff ko dikhani hai.
+3. Baad mein `graph.invoke(Command(resume=decision), config)` chalane par wahi node **shuru se dobara** chalta hai. Is dafa `interrupt()` rukta nahi, balke `decision` **lautata** hai.
+
+⚠️ **Gotcha (senior zaroor poochega):** resume par tool **upar se dobara** chalta hai. Is liye `interrupt()` se **pehle** sirf padhne wala (read-only) kaam hona chahiye. Refund (paisa) `interrupt()` ke **baad** hota hai. Agar refund pehle hota to har resume par dobara hota.
+
+### Pura safar
+```mermaid
+sequenceDiagram
+  participant C as Customer
+  participant W as Agent worker
+  participant DB as Postgres
+  participant S as Staff
+  participant K as Kafka
+  C->>DB: POST /tickets (refund ORD-1001) + outbox
+  DB->>K: tickets.created (relay)
+  K->>W: tickets.created
+  W->>W: agent → request_refund → interrupt()
+  W->>DB: status waiting_approval + approval_request
+  W-->>C: SSE approval_required (stream rukta hai)
+  S->>DB: GET /staff/tickets/ → POST decision + outbox (1 transaction)
+  DB->>K: tickets.approval_decided (relay)
+  K->>W: tickets.approval_decided
+  W->>W: Command(resume=decision) → refund_order() → agent jawab
+  W->>DB: answered
+  W-->>C: SSE approval_decided … answered
+```
+
+### Design faisle
+| Faisla | Kyun |
+|---|---|
+| Refund tool **sirf ticket** channel mein (`tools_for(context)`), chat mein bind hi nahi hota | Chat ko abhi jawab dena hai, wo ghanton staff ka intezar nahi kar sakta. Tool ke andar bhi `channel` check hai (dohri deewar) |
+| Ghalat order (failed/pending/kisi aur ka) → tool `interrupt()` se **pehle** mana kar deta hai | Staff ka waqt sirf asli requests par lage |
+| Staff ka faisla **Kafka event** se worker tak jata hai, API khud graph resume nahi karti | API tez rehti hai (LLM call request mein nahi hoti); retry, DLQ aur idempotency wahi purane mil jate hain |
+| Event mein faisla **nahi**, sirf `ticket_public_id`. Worker DB se `approval_decision` padhta hai | Lesson 11A ka usool: events IDs le kar chalte hain, data taaza DB se aata hai |
+| `decide_approval`: `select_for_update` + `approval_decision is None` check | Do staff ek saath click karein to doosre ko **409** milta hai |
+| `refund_order`: `select_for_update` + `status == paid` dobara check | Do approvals ya resume ek saath aayein tab bhi **double refund** nahi hota |
+| Output guard: `"refund_status": "done"` tool result mein ho to "refunded" kehna jaiz hai | Ab ye **sach** hai, ghadhi hui baat nahi |
+| Staff auth: tenant header + `X-Staff-Key` (`hmac.compare_digest`) | **Arzi** hai, JWT roles aane tak. Key `.env` mein hai, git mein nahi |
+| Worker `ROUTES = {topic: (EventClass, handler, dlq)}` | Ek worker, ek loop, kai event types; har topic ka apna DLQ |
+| Stream: `approval_required` par tabhi ruko jab faisla abhi baqi ho | Faisle ke baad replay rukna nahi chahiye, resume ke events usi ke peeche aate hain |
+
+### Tests (27 Oct 2026)
+| Test | Natija |
+|---|---|
+| `lesson13_approval.py` A: failed order ka refund | Ruka **nahi**, "only paid orders" ✅ |
+| B: paid order → reject | `interrupt` value `{order_number: ORD-1001, amount: 49.00 USD, reason: Charged twice}`; reject ke baad order `paid` raha; agent ne staff note bataya ✅ |
+| C: paid order → approve | Order `refunded`; "refund ... approved and processed" par guard ne **flag nahi** kiya ✅ |
+| D: chat mein refund | `request_refund` bind hi nahi tha; "open a support ticket" ✅ |
+| E2E Kafka | `tool_call request_refund` → `approval_required` (stream ruka) → staff list (Ali Khan, ORD-1001) → approve **202** → dobara approve **409** → stream: `approval_decided → processing → tool_result refund_status done → answered` → DB `ORD-1001 refunded` ✅. Worker log: `waiting for staff approval in 2.4s` → `answered in 0.9s` |
+| Ghalat staff key | **401** ✅ |
+| `lesson12_eval.py` (regression) | **16/16** ✅ |
+
+### Ek asli debugging sabaq
+Pehla E2E fail hua: agent ne refund tool chalaya hi nahi aur purane v3 prompt jaisa jawab diya. Wajah: dopahar 2:55 se ek **purana worker** chal raha tha (11B ke test ka) jo usi consumer group `agent-workers` mein tha. Kafka ne partition **usay** de diya. Sabaq: code badlo to **saare** workers restart karo. Consumer group mein jo bhi process hai, wo kaam utha sakta hai, chahe wo purana code chala raha ho. Production mein deploy isi liye **rolling restart** karta hai.

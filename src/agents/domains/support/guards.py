@@ -88,12 +88,18 @@ def mentions_other_person(message: str, customer: Customer) -> bool:
     return any(_digits(phone)[-9:] != own_phone for phone in PHONE_RE.findall(message) if len(_digits(phone)) >= 9)
 
 
-def classify_input(message: str, *, company_name: str, customer_name: str, previous_language: Language) -> InputVerdict:
+def classify_input(
+    message: str, *, company_name: str, customer_name: str, previous_language: Language
+) -> tuple[InputVerdict, int]:
+    """Return the verdict and the tokens the classifier used (include_raw keeps the raw message and its usage)."""
     prompt = load_prompt(
         INPUT_GUARD_PROMPT, company_name=company_name, customer_name=customer_name, previous_language=previous_language
     )
-    llm = get_chat_model(model=env.llm_guard_model).with_structured_output(InputVerdict)
-    return llm.invoke([SystemMessage(prompt), HumanMessage(message)])
+    llm = get_chat_model(model=env.llm_guard_model).with_structured_output(InputVerdict, include_raw=True)
+    result = llm.invoke([SystemMessage(prompt), HumanMessage(message)])
+    if result["parsed"] is None:
+        raise ValueError(f"guard classifier returned no verdict: {result['parsing_error']}")
+    return result["parsed"], (result["raw"].usage_metadata or {}).get("total_tokens", 0)
 
 
 def _normalize(text: str) -> str:
@@ -110,5 +116,23 @@ def check_output(reply: str, messages: list[BaseMessage]) -> list[str]:
     flags += [f"ungrounded_link:{url}" for url in URL_RE.findall(reply) if url.lower() not in evidence]
     flags += [f"ungrounded_order:{number}" for number in ORDER_RE.findall(reply) if number.lower() not in evidence]
     lower_reply = reply.lower()
-    flags += [f"banned_phrase:{phrase}" for phrase in BANNED_PHRASES if phrase in lower_reply]
+    # After a staff-approved refund the tool result says so, and then "refunded" is a fact, not an invented claim.
+    refund_done = '"refund_status": "done"' in evidence
+    flags += [
+        f"banned_phrase:{phrase}"
+        for phrase in BANNED_PHRASES
+        if phrase in lower_reply and not (refund_done and "refund" in phrase)
+    ]
     return flags
+
+
+def feedback_for(flags: list[str]) -> str:
+    """Turn output-guard flags into plain instructions the agent can follow when it rewrites its reply."""
+    notes = []
+    for flag in flags:
+        kind, _, value = flag.partition(":")
+        if kind == "banned_phrase":
+            notes.append(f'do not use the words "{value}" at all, not even to say you cannot do it')
+        else:
+            notes.append(f'do not mention "{value}"; it is not in your tool results')
+    return "; ".join(notes)

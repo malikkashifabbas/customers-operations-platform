@@ -14,10 +14,13 @@
 | `customerPublicId` | Ali Khan @ Demo Company — `customers_customer.public_id`, sent as `X-Customer-Public-Id` (switch to `{{saraCustomerPublicId}}` to chat as Sara) |
 | `conversationId` | Chat memory key; filled automatically from the last chat response |
 | `newCustomerPublicId` | Filled by *Create customer* |
+| `staffApiKey` | **Secret, empty in git** — paste `STAFF_API_KEY` from your `.env`; sent as `X-Staff-Key` by the *Staff approvals* folder |
 | `ticketPublicId` | Filled by *Create ticket*; *Get ticket* polls it until `answered` (needs relay + worker running) |
 
 The demo ids stay the same as long as the local database is not wiped; after `docker compose down -v` + `seed_data`, get the new ones with `uv run src/manage.py list_ids`.
 
 **Guardrails folder:** each request checks `blocked_reason` in a Postman test (Tests tab). Chat responses now also carry `blocked_reason` and `output_flags`; SSE streams can send `guardrail` and `replace` events.
+
+**Staff approvals folder (Lesson 13):** refund tickets pause with status `waiting_approval`; approve/reject here and the worker resumes the agent. *List* fills `ticketPublicId` with the oldest waiting ticket.
 
 **Rule:** every new or changed API is added to the collection in the same change.

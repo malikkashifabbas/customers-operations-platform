@@ -1,11 +1,16 @@
-"""Read-only tools; the customer comes from runtime.context, so the LLM can never choose whose data it sees."""
+"""Tools; the customer comes from runtime.context, so the LLM can never choose whose data it sees.
+
+Read tools run freely; request_refund changes money, so it pauses the graph (interrupt) until a staff member decides.
+"""
 
 import json
 
 from langchain.tools import ToolRuntime, tool
+from langgraph.types import interrupt
 
 from apps.orders import selectors as order_selectors
-from apps.orders.models import Order
+from apps.orders import services as order_services
+from apps.orders.models import Order, OrderStatus
 
 from .context import SupportContext
 
@@ -65,4 +70,39 @@ def get_my_spending_summary(runtime: ToolRuntime[SupportContext]) -> str:
     )
 
 
+@tool
+def request_refund(order_number: str, reason: str, runtime: ToolRuntime[SupportContext]) -> str:
+    """Ask a staff member to approve a refund of one of the customer's own PAID orders. Nothing is refunded unless staff approve. Use it only when the customer clearly asks for a refund of a specific order."""
+    context = runtime.context
+    if context.channel != "ticket":
+        return "Refunds need staff approval and can only be requested in a support ticket, not in chat."
+    order = order_selectors.get_order_for_customer(
+        tenant=context.tenant, customer=context.customer, order_number=order_number
+    )
+    if order is None:
+        return f"No order {order_number} was found for this customer."
+    if order.status != OrderStatus.PAID:
+        return f"Order {order.order_number} is {order.status}; only paid orders can be refunded."
+
+    # On resume this whole tool runs again from the top, so everything above must stay read-only.
+    decision = interrupt(
+        {
+            "type": "refund_approval",
+            "order_number": order.order_number,
+            "amount": f"{order.amount} {order.currency}",
+            "reason": reason,
+        }
+    )
+    if not decision.get("approved"):
+        return json.dumps({"refund_status": "rejected", "order_number": order.order_number, "staff_note": decision.get("note") or None})
+    order = order_services.refund_order(order=order)
+    return json.dumps({"refund_status": "done", "order_number": order.order_number, "amount": f"{order.amount} {order.currency}"})
+
+
 TOOLS = [get_my_profile, list_my_orders, get_my_order, get_my_spending_summary]
+TICKET_TOOLS = [*TOOLS, request_refund]
+ALL_TOOLS = TICKET_TOOLS
+
+
+def tools_for(context: SupportContext) -> list:
+    return TICKET_TOOLS if context.channel == "ticket" else TOOLS
