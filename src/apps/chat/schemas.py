@@ -21,3 +21,6 @@ class ChatOut(Schema):
     llm_calls: int
     tokens: int
     latency_ms: int
+    # Set by the guard nodes: why the question was refused, and what the output guard caught (empty = clean reply).
+    blocked_reason: str | None = None
+    output_flags: list[str] = []

@@ -10,11 +10,11 @@ class LLMNotConfigured(RuntimeError):
     pass
 
 
-def get_chat_model(*, temperature: float = 0) -> BaseChatModel:
+def get_chat_model(*, temperature: float = 0, model: str | None = None) -> BaseChatModel:
     if env.llm_api_key is None:
         raise LLMNotConfigured("Set LLM_API_KEY (or GROQ_API_KEY) in .env to use the LLM.")
     return init_chat_model(
-        env.llm_model,
+        model or env.llm_model,
         api_key=env.llm_api_key.get_secret_value(),
         temperature=temperature,
     )

@@ -32,6 +32,22 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `get_chat_model().with_structured_output(MyPydantic)` | LLM se pakki shakal ka jawab | `playground/lesson07a_llm_classify.py` |
 | `init_chat_model("groq:openai/gpt-oss-120b", api_key=...)` | Provider dekh kar LLM banao | `infra/llm/gateway.py` |
 
+### 1B. Guardrails (Lesson 12)
+
+| Code | Kya karta hai | Kahan |
+|---|---|---|
+| `class SupportState(MessagesState): language; blocked_reason; output_flags` | Whiteboard par messages ke ilawa guards ke faisle | `agents/domains/support/state.py` |
+| `builder.add_conditional_edges("guard_input", route_after_input, {"agent": "agent", "refuse": "refuse"})` | Bura sawal → `refuse` (fixed text, koi LLM nahi), achha → `agent` | graph.py |
+| `builder.add_conditional_edges("agent", tools_condition, {"tools": "tools", END: "guard_output"})` | Path map se `END` ka raasta **badla**: jawab pehle guard se guzre | graph.py |
+| `guards.mentions_other_person(message, customer)` | Muft code check (kisi aur ki email/phone) — LLM se **pehle** | `agents/domains/support/guards.py` |
+| `get_chat_model(model=env.llm_guard_model).with_structured_output(InputVerdict)` | LLM classifier: `decision` + `language` | guards.py |
+| `except Exception: ... "blocked_reason": None` | **Fail-open**: guard gira to sawal agent ko (asal security tools mein hai) | graph.py::guard_input |
+| `guards.check_output(reply, state["messages"])` | Reply ki email/link/ORD tool results mein hain? mana jumle? | guards.py |
+| `AIMessage(safe, id=reply.id)` | **Same id** → `add_messages` purana jawab **badal** deta hai, naya nahi jodta | graph.py::guard_output |
+| `_normalize(text)` | LLM ke `‑` (U+2011), ` `, `’` ko seedha karo, warna regex chook jaye | guards.py |
+| SSE `guardrail` / `replace` events | Frontend: inkaar ka sabab / poora bubble text badlo | `agents/core/streaming.py` |
+| `uv run python playground/lesson12_eval.py` | 16 sawal, PASS/FAIL, exit code 1 agar koi fail | playground |
+
 ---
 
 ## 2. Kafka (dak-khana / post office)

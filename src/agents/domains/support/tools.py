@@ -50,4 +50,19 @@ def get_my_order(order_number: str, runtime: ToolRuntime[SupportContext]) -> str
     return json.dumps(_order_to_dict(order))
 
 
-TOOLS = [get_my_profile, list_my_orders, get_my_order]
+@tool
+def get_my_spending_summary(runtime: ToolRuntime[SupportContext]) -> str:
+    """Get the current customer's order totals per status (paid, failed, pending, refunded): count and total amount. Use it for any 'how much did I spend / pay' question."""
+    context = runtime.context
+    rows = order_selectors.spending_summary_for_customer(tenant=context.tenant, customer=context.customer)
+    if not rows:
+        return "This customer has no orders."
+    return json.dumps(
+        [
+            {"status": row["status"], "order_count": row["order_count"], "total_amount": f"{row['total_amount']} {row['currency']}"}
+            for row in rows
+        ]
+    )
+
+
+TOOLS = [get_my_profile, list_my_orders, get_my_order, get_my_spending_summary]

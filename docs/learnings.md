@@ -918,3 +918,63 @@ Stream der se khola to `processing` aur `tool_call` gayab — **Pub/Sub history 
 | 4 | Purana ticket (stream nahi) | `status` + `answered` DB se ✅ |
 | 5 | **Worker band**, ticket bana, stream 34s khula | `status: open` → `: keep-alive` (15s) → `: keep-alive` (30s) ✅ connection zinda |
 | 6 | Worker wapas → stream dobara khola | Worker ne 3.4s mein jawab diya; poori history replay ✅ |
+
+## Learning 19 ⭐: Guardrails — prompt darkhwast hai, code guarantee
+
+**Date:** 27 Oct 2026 · **Files:** `agents/domains/support/state.py`, `guards.py`, `graph.py`, `prompts/system.v3.md`, `prompts/input_guard.v1.md`, `tools.py` (`get_my_spending_summary`), `apps/orders/selectors.py` (`spending_summary_for_customer`), `agents/core/streaming.py`, `apps/chat/schemas.py` + `services.py`, `playground/lesson12_eval.py`
+
+### Masla
+v2 prompt mein rules the, phir bhi agent kabhi "payment link", "orders page" ghadta, English sawal ka Roman Urdu mein jawab deta, aur "Sara ke orders" par apne orders dikha deta. **Prompt sirf darkhwast hai** — LLM 100 mein se 95 baar maanta hai. Guarantee sirf code deta hai.
+
+### Defense in depth (kai deewarein)
+| Deewar | Kya | Qisam |
+|---|---|---|
+| 1 (Lesson 9) | Tools sirf `runtime.context` wala customer dekhte hain | **Security** — sab se mazboot, LLM ke haath mein nahi |
+| 2 | `guard_input`: sawal agent se pehle | Quality/safety |
+| 3 | `guard_output`: jawab customer se pehle | Quality/safety |
+| 4 | Prompt v3: tools ki exact list, pages/links mana, `{reply_language}` | Rehnumai |
+
+### Naya graph
+```mermaid
+graph TD
+  START --> guard_input
+  guard_input -->|allowed| agent
+  guard_input -->|blocked| refuse
+  agent -->|tool calls| tools
+  tools --> agent
+  agent -->|final answer| guard_output
+  guard_output --> END
+  refuse --> END
+```
+
+### Har node ek line mein
+- **`guard_input`** — pehle **muft code check** (message mein kisi aur ki email/phone?), phir **LLM classifier** `with_structured_output(InputVerdict)` → `decision` (allowed / other_customer / prompt_injection / off_topic) + `language`. Classifier ko customer ka apna naam diya, taa ke "main Sara hoon" block na ho.
+- **`refuse`** — har wajah × har zabaan ka **tayyar** message. Koi LLM nahi → ghadne ka sawal hi nahi.
+- **`agent`** — v3 prompt; zabaan ab **code** batata hai (`state["language"]`), LLM nahi andaaza lagata.
+- **`guard_output`** — reply ki har email, link, `ORD-xxxx` tool results/customer ke message mein honi chahiye; mana jumle ("payment link", "I have refunded", "link bhej"). Ghalti → **usi `id`** ke saath safe jawab (`add_messages` replace karta hai).
+
+### 5 sabaq jo senior poochega
+1. **Sasta pehle, mehnga baad mein:** regex (0 ms, muft) → LLM (~0.5–1.5s). Email wala case `0.0s` mein block hua.
+2. **Fail-open vs fail-closed:** classifier gira to sawal agent ko jata hai (fail-open), kyunki data ki hifazat deewar 1 kar rahi hai. Agar guard hi security hota to fail-closed (inkaar) karte.
+3. **Path map se raasta badalna:** `tools_condition` `END` lautaata hai; `{END: "guard_output"}` ne usay guard ki taraf mod diya — tools_condition ko chhue bagair.
+4. **Streaming + output guard ka takraao:** tokens pehle hi customer tak pahunch chuke hote hain. Hal: `replace` event → frontend poora bubble badle. Aur classifier ke tokens leak na hon is liye stream filter `langgraph_node == "agent"` (test mein `decision` lafz stream mein **0** baar aaya).
+5. **LLM ke typographic characters:** model `ORD‑1002` mein **U+2011** (non-breaking hyphen) aur ` ` space likhta hai → seedha `ORD-\d+` regex chook jata. `_normalize()` pehle saaf karta hai. Ye baseline output padh kar pakda.
+
+### Hisaab DB kare, LLM nahi
+`get_my_spending_summary` → selector `values("status", "currency").annotate(Count, Sum)` → `GROUP BY` SQL. LLM sirf number sunata hai (Emma: `782.43 USD` ✅).
+
+### Tests (27 Oct 2026)
+| Test | Natija |
+|---|---|
+| Offline guard checks (6 input + 5 output, bina LLM) | Sab OK; `ORD‑1002` (U+2011) grounded mana gaya, `ORD-9999` pakda gaya |
+| JSON chat "Sara Ahmed's orders" | `blocked_reason: other_customer`, `tool_calls: []` |
+| SSE prompt injection | `start → guardrail → token (refusal) → done` |
+| SSE normal | `start, tool_call, tool_result, token×44, done` — guard ka JSON leak **nahi** |
+| Kafka ticket "orders of Sara Ahmed" | Worker stream: `processing → guardrail → token → answered` (refusal DB mein save) |
+| `lesson12_eval.py` | **16/16 PASS** (v2 baseline mein pass/fail tha hi nahi, sirf print) |
+
+### Jo abhi kamzor hai (agle lessons)
+- **Output guard bhaunda (blunt) hai:** "kya payment link bhej sakte ho?" par agent ne sahi inkaar likha *"payment link nahi bhej sakta"*, phir bhi `payment link` lafz ki wajah se fallback aaya. Behtar: ek dafa **retry with feedback** (agent ko wajah bata kar dobara likhwao), phir fallback.
+- Grounding check sirf email/link/ORD dekhta hai — "naya order place kar lo" jaisi salah nahi pakadta.
+- `llm_calls`/`tokens` API response mein classifier ka kharcha shamil **nahi** (wo messages mein nahi jata); refusal ko `llm_calls: 1, tokens: 0` dikhata hai.
+- Latency: eval avg 2.4s (v2) → 7.1s (v3). Har sawal par +1 LLM call, aur peeche peeche 16 sawal Groq free tier ki rate limit chhoo lete hain. `LLM_GUARD_MODEL=groq:llama-3.1-8b-instant` se classifier tez bhi hoga aur Groq ki **alag model ki alag limit** bhi milegi.

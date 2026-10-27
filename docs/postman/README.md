@@ -18,4 +18,6 @@
 
 The demo ids stay the same as long as the local database is not wiped; after `docker compose down -v` + `seed_data`, get the new ones with `uv run src/manage.py list_ids`.
 
+**Guardrails folder:** each request checks `blocked_reason` in a Postman test (Tests tab). Chat responses now also carry `blocked_reason` and `output_flags`; SSE streams can send `guardrail` and `replace` events.
+
 **Rule:** every new or changed API is added to the collection in the same change.

@@ -18,6 +18,8 @@ class Env(BaseSettings):
     postgres_port: int = 5433
 
     llm_model: str = "groq:openai/gpt-oss-120b"
+    # Small fast model for the guardrail classifier; empty means "use llm_model".
+    llm_guard_model: str | None = None
     # Optional so Django still starts without a key; accepts the generic or the provider-specific name.
     llm_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("LLM_API_KEY", "GROQ_API_KEY"))
 

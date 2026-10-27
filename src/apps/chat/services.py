@@ -69,6 +69,8 @@ def run_chat(*, principal: CustomerPrincipal, message: str, conversation_id: str
         "llm_calls": len(new_ai),
         "tokens": sum((m.usage_metadata or {}).get("total_tokens", 0) for m in new_ai),
         "latency_ms": int((time.perf_counter() - started) * 1000),
+        "blocked_reason": result.get("blocked_reason"),
+        "output_flags": result.get("output_flags", []),
     }
 
 
