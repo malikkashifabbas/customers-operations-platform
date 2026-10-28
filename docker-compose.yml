@@ -1,5 +1,28 @@
 # Local development infrastructure for OpsPilot: Postgres + pgvector, Redis, Kafka (KRaft), Kafka UI.
+# Optional LLM tracing (self-hosted Langfuse): docker compose --profile observability up -d
 name: opspilot
+
+# Langfuse settings shared by its web and worker containers. Defaults are for a LOCAL machine only
+# (ports bound to 127.0.0.1); any shared server must override every *_SECRET / *_PASSWORD in .env.
+x-langfuse-env: &langfuse-env
+  DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/langfuse
+  SALT: ${LANGFUSE_SALT:-opspilot-local-dev-salt}
+  ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+  TELEMETRY_ENABLED: "false"
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse-local-dev}
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  # SeaweedFS without an identities file accepts any key: fine on a laptop, never on a shared server.
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: local-dev
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://seaweedfs:8333
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  REDIS_CONNECTION_STRING: redis://redis:6379/1
 
 services:
   postgres:
@@ -79,6 +102,110 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ---- Optional: self-hosted Langfuse (LLM traces stay on this machine) ----
+  langfuse-db-init:
+    image: pgvector/pgvector:0.8.7-pg17
+    profiles: [observability]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    # One-shot: our Postgres volume already exists, so its init scripts never run again; create the DB here.
+    command: >
+      sh -c "psql -h postgres -U ${POSTGRES_USER} -d ${POSTGRES_DB} -tc \"SELECT 1 FROM pg_database WHERE datname='langfuse'\" | grep -q 1
+      || psql -h postgres -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c 'CREATE DATABASE langfuse'"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.3
+    container_name: opspilot-clickhouse
+    profiles: [observability]
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse-local-dev}
+    volumes:
+      - langfuse-clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # S3-compatible blob storage for Langfuse events (MinIO stopped publishing Docker images).
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.51
+    container_name: opspilot-seaweedfs
+    profiles: [observability]
+    command: server -s3
+    volumes:
+      - langfuse-s3-data:/data
+    healthcheck:
+      # SeaweedFS listens on the container IP, not on localhost.
+      test: ["CMD-SHELL", "wget -q --spider http://$$(hostname -i):9333/cluster/status || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  langfuse-bucket-init:
+    image: amazon/aws-cli:2.38.6
+    profiles: [observability]
+    environment:
+      AWS_ACCESS_KEY_ID: langfuse
+      AWS_SECRET_ACCESS_KEY: local-dev
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ["sh", "-c"]
+    command:
+      - aws --endpoint-url http://seaweedfs:8333 s3api head-bucket --bucket langfuse || aws --endpoint-url http://seaweedfs:8333 s3 mb s3://langfuse
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: opspilot-langfuse-worker
+    profiles: [observability]
+    environment: *langfuse-env
+    depends_on: &langfuse-deps
+      langfuse-db-init:
+        condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
+      langfuse-bucket-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: opspilot-langfuse-web
+    profiles: [observability]
+    # 3100 on the host: 3000 is often taken by other local projects.
+    ports:
+      - "127.0.0.1:3100:3000"
+    environment:
+      <<: *langfuse-env
+      NEXTAUTH_URL: http://localhost:3100
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-opspilot-local-dev-nextauth}
+      # Headless init: org, project, login user and API keys exist from the first start, so nobody has to sign up.
+      LANGFUSE_INIT_ORG_ID: opspilot
+      LANGFUSE_INIT_ORG_NAME: OpsPilot
+      LANGFUSE_INIT_PROJECT_ID: opspilot-dev
+      LANGFUSE_INIT_PROJECT_NAME: opspilot-dev
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-opspilot-local}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-opspilot-local}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_ADMIN_EMAIL:-dev@opspilot.example}
+      LANGFUSE_INIT_USER_NAME: OpsPilot Dev
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_ADMIN_PASSWORD:-opspilot-local-dev}
+    depends_on: *langfuse-deps
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   redis-data:
+  langfuse-clickhouse-data:
+  langfuse-s3-data:

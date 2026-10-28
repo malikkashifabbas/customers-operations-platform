@@ -107,6 +107,20 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `uv run python playground/lesson15_retrieval.py` | Vector vs hybrid nateeje + tenant `assert` (bina LLM) | playground |
 | `uv run python playground/lesson15_eval.py` | 19 jaal wale sawal, PASS/FAIL | playground |
 
+### 1F. Observability — Langfuse self-hosted (Lesson 16)
+
+| Code / command | Kya karta hai | Kahan |
+|---|---|---|
+| `docker compose --profile observability up -d` | Langfuse + ClickHouse + SeaweedFS chalao (UI `localhost:3100`) | `docker-compose.yml` |
+| `LANGFUSE_ENABLED=true` (`.env`) + runserver/worker **restart** | Tracing on (autoreload `.env` nahi dekhta) | `.env` |
+| `config = trace_config(config, session_id=, user_id=, tenant=, channel=, tags=)` | Callback + labels jodo; off ho to config waisi hi | `infra/observability/tracing.py` |
+| `metadata["langfuse_session_id" / "langfuse_user_id" / "langfuse_tags"]` | Langfuse callback ye keys padhta hai | tracing.py |
+| `Langfuse(..., mask=mask)` + `model_dump()` | PII trace bhejne se **pehle** chhupao (messages pydantic objects hain) | tracing.py |
+| `flush()` | Chhoti scripts exit se pehle traces bhejein | tracing.py |
+| `dataset.run_experiment(name=, run_name=, task=, evaluators=[...])` + `Evaluation(name=, value=)` | Har run ek experiment; UI mein side by side | `playground/lesson16_bench.py` |
+| `uv run python playground/lesson16_bench.py --run <name> --pause 60` | 8 sawal: waqt, TTFT, calls, tokens per node | playground |
+| Groq headers `x-ratelimit-limit-tokens` / `-requests` | Free tier: 8000 tokens/min, 1000 requests/day | — |
+
 ---
 
 ## 2. Kafka (dak-khana / post office)

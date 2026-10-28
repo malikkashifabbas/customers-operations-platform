@@ -19,6 +19,7 @@ from core.limits import TICKET_LOCK_SECONDS
 from infra.cache import keys, streams
 from infra.cache.locks import redis_lock
 from infra.eventbus.events import TicketApprovalDecidedV1, TicketCreatedV1
+from infra.observability.tracing import trace_config
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,14 @@ def handle_approval_decided(event: TicketApprovalDecidedV1) -> str:
 def _run(ticket: Ticket, graph_input) -> str:
     """Run (or resume) the agent for this ticket, stream its events, then save either the answer or the approval request."""
     _publish(ticket, "processing", {})
-    config = {"configurable": {"thread_id": f"{ticket.tenant.public_id}:{ticket.customer.public_id}:ticket-{ticket.public_id}"}}
+    config = trace_config(
+        {"configurable": {"thread_id": f"{ticket.tenant.public_id}:{ticket.customer.public_id}:ticket-{ticket.public_id}"}},
+        session_id=f"ticket-{ticket.public_id}",  # the first run and the resume after approval land in one session
+        user_id=str(ticket.customer.public_id),
+        tenant=ticket.tenant.slug,
+        channel="ticket",
+        tags=["resume"] if isinstance(graph_input, Command) else [],
+    )
     context = SupportContext(tenant=ticket.tenant, customer=ticket.customer, channel="ticket")
     graph = get_graph()
     # subgraphs=True: specialists run inside nodes, and their tokens only reach this stream with it.

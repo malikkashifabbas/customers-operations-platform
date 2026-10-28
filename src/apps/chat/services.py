@@ -18,6 +18,7 @@ from agents.orchestrator.graph import build_graph
 from core.limits import CHAT_MESSAGES_PER_MINUTE, CONVERSATION_LOCK_SECONDS
 from core.sse import sse
 from infra.cache import locks, ratelimit
+from infra.observability.tracing import trace_config
 
 from .auth import CustomerPrincipal
 from .exceptions import AssistantUnavailable, ConversationBusy, RateLimited
@@ -42,7 +43,13 @@ def _prepare(principal: CustomerPrincipal, conversation_id: str | None):
         raise RateLimited()
     conversation_id = conversation_id or uuid.uuid4().hex
     thread_id = _thread_id(principal, conversation_id)
-    config = {"configurable": {"thread_id": thread_id}}
+    config = trace_config(
+        {"configurable": {"thread_id": thread_id}},
+        session_id=conversation_id,
+        user_id=str(principal.customer.public_id),
+        tenant=principal.tenant.slug,
+        channel="chat",
+    )
     context = SupportContext(tenant=principal.tenant, customer=principal.customer)
     return conversation_id, thread_id, config, context
 

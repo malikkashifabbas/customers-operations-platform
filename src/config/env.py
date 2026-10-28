@@ -30,6 +30,12 @@ class Env(BaseSettings):
     kafka_bootstrap_servers: str = "localhost:9092"
     redis_url: str = "redis://localhost:6379/0"
 
+    # Self-hosted Langfuse tracing (docker compose --profile observability); off unless LANGFUSE_ENABLED=true.
+    langfuse_enabled: bool = False
+    langfuse_host: str = "http://localhost:3100"
+    langfuse_public_key: str = "pk-lf-opspilot-local"
+    langfuse_secret_key: SecretStr = SecretStr("sk-lf-opspilot-local")
+
     # Shared key for the staff approval API until JWT roles exist; unset = staff API refuses everyone.
     staff_api_key: SecretStr | None = None
 

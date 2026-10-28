@@ -1260,3 +1260,53 @@ LangGraph checkpoint tables (Django models nahi) → Beekeeper. Chat memory → 
 
 ### Test
 Script ne har registered model ki list, detail aur add page superuser ke taur par khola: sab list/detail **200**; Order, Ticket, Outbox, Knowledge ka add **403** (umeed ke mutabiq).
+
+## Learning 25 ⭐: Observability — self-hosted Langfuse (OpenTelemetry), masking aur pehle naapna (16A)
+
+**Date:** 28 Oct 2026 · **Files:** `docker-compose.yml` (profile `observability`), `src/infra/observability/tracing.py`, `apps/chat/services.py`, `workers/handlers/tickets.py`, `config/env.py`, `playground/lesson16_bench.py`, `docs/observability.md`
+
+### Kya bana
+- **Self-hosted Langfuse 3** ek command se: `docker compose --profile observability up -d` → UI `localhost:3100` (`dev@opspilot.example` / `opspilot-local-dev`). Headless init se org, project aur API keys pehle se bane hote hain, isliye signup nahi chahiye. `TELEMETRY_ENABLED=false`: Langfuse khud bhi bahar kuch nahi bhejta.
+- Containers: `langfuse-web`, `langfuse-worker`, **ClickHouse** (traces ke liye column DB), **SeaweedFS** (S3-compatible storage), aur do one-shot init jobs. Postgres (`langfuse` DB) aur Redis (db 1) humare purane hain.
+- **Code mein sirf ek jagah** Langfuse ka pata hai: `trace_config()` LangGraph config mein callback + labels (session, user, tags) jodta hai, aur `flush()`. `LANGFUSE_ENABLED=false` ho to kuch nahi hota.
+- Labels: chat session = `conversation_id`, ticket session = `ticket-<id>` (pehla run + approval ke baad resume ek hi session mein), tags `tenant:…`, `channel:…`, `resume`.
+
+### Raaste ke asli masle
+| Masla | Wajah | Hal |
+|---|---|---|
+| `pull access denied for minio/minio` | MinIO ne Docker images publish karna band kar diya | **SeaweedFS** + `aws-cli` init job jo bucket banata hai |
+| SeaweedFS healthcheck "Connection refused" | Wo `localhost` par nahi, container IP par sunta hai | `wget http://$$(hostname -i):9333/...` (`$$` = compose ka escape) |
+| **Masking kaam nahi ki** (phone trace mein dikh raha tha) | Mask function ko LangChain ke `HumanMessage` **objects** milte hain, dict/string nahi | Pydantic objects ko `model_dump()` karke mask karo. Smoke test ne pakda: `my phone is [phone]` ✅ |
+| Experiment: "cannot call this from an async context" | Langfuse `run_experiment` task ko apne asyncio loop mein chalata hai, Django ORM sync hai | Sirf bench script mein `DJANGO_ALLOW_ASYNC_UNSAFE=true` (task ek waqt mein ek) |
+| Evaluator: `'dict' has no attribute 'name'` | SDK `Evaluation` object chahta hai | `Evaluation(name=..., value=...)` |
+| Runserver se traces nahi aaye | Autoreload sirf `.py` files dekhta hai, `.env` nahi | `.env` badlo to runserver + worker **khud restart** karo |
+
+### Sab se bara sabaq: pehle naapo
+Pehla baseline: **median 22.6s**. Langfuse timeline: ek chhota jawab (80 output tokens) **12.8 second**. Reasoning tokens bhi kam the (22–49). Groq ke headers ne asal wajah batayi:
+```
+limit-tokens=8000 (per minute)   limit-requests=1000 (per day)   akeli call: 0.44–0.76s
+```
+8 sawal ~27k tokens = 8k/minute limit par SDK `retry-after` ka intezar karta raha. `--pause 60` ke saath **asli baseline**:
+
+| Sawal | Bina pause | **Asli** | Calls | Tokens |
+|---|---|---|---|---|
+| guard refuse | 1.8s | 0.9s | 1 | 506 |
+| account | 15.3s | 3.1s | 4 | 2,091 |
+| billing | 23.5s | 3.4s | 4 | 2,629 |
+| account + billing | 30.5s | 4.2s | 7 | 4,315 |
+| RAG (4 sawal) | 11–34s | 4.7–8.2s | 5–6 | 3,900–4,600 |
+| **median** | 22.6s | **4.5s** | 5 | 3,926 |
+
+Agar hum bina naape "model slow hai" samajh kar optimize karte, to **ghalat cheez** theek karte.
+
+### Tokens kahan ja rahe hain (8 sawal, 26,349 tokens)
+| Node | Calls | Tokens | Note |
+|---|---|---|---|
+| generate_answer | 4 | 6,012 | RAG jawab (5 chunks prompt mein) |
+| agent | 8 | 4,997 | Billing/account specialists |
+| **supervisor** | 7 | 4,472 | Guard + supervisor = **8,601 tokens (33%)**: har sawal par do classification calls |
+| **guard_input** | 8 | 4,129 | (upar wali row ke saath) |
+| retrieve | 4 | 4,261 | Ye asal mein **grade** hai: edge function source node (retrieve) ke task ke andar chalti hai, isliye usi ka naam milta hai |
+| generate_query_or_respond | 4 | 1,646 | |
+
+**TTFT ≈ kul waqt** ka matlab: jawab likhna tez hai (Groq), saara waqt jawab **shuru hone se pehle** ke qadmon (guard, supervisor, tools, grade) mein jata hai. Agle qadam (16B) data ke mutabiq: guard + supervisor ek call (−33% tokens), grade sirf zaroorat par, chunks 5 → 3, chhota model classification ke liye, aur cache.
