@@ -1233,3 +1233,30 @@ Hybrid ka asar (`lesson15_retrieval.py`):
 | **Nayi Groq key ke saath (28 Oct)** | lesson15 **18/19**, lesson14 **7/7**, lesson13 **4/4**, lesson12 **11/11** (baqi 5 user ne roke) |
 | Aakhri fail: "I paid cash on delivery **and returned an item**, money back kaise?" → billing | Supervisor ne "I paid / I returned" ko customer ka apna data samjha. Rule joda: *apni situation + general rule (kaise, kitne din, fee) → knowledge; billing sirf tab jab order ka data bhi chahiye*. Dobara: **3/3** (COD → knowledge; "why did ORD-1002 fail" aur "refund ORD-1002" → sirf billing) |
 | Kafka refund E2E (Postman, naya `subgraphs=True` code) | ticket → `waiting_approval` (ORD-1001, 49.00 USD) → staff approve → `answered` ✅ |
+
+## Learning 24: Django admin — dekhna admin se, badalna services se (15C)
+
+**Date:** 28 Oct 2026 · **Files:** `apps/knowledge/admin.py` (naya), `apps/orders/admin.py`, `apps/tickets/admin.py`, `apps/customers/admin.py`, `infra/eventbus/admin.py`
+
+### Usool
+Admin ka "Save" button seedha table mein likhta hai aur **services ko bypass** karta hai: na row lock, na business check, na outbox event. Is liye:
+- **Admin = dekhna + dhoondna** (list, filters, search, inlines).
+- **Badlaav = admin actions**, jo andar se wahi service chalate hain jo API chalati hai.
+
+### Kya badla
+| Model | Pehle | Ab | Kyun |
+|---|---|---|---|
+| Order | `status` editable, Add khula | `status`/`paid_at` read-only, Add band; action **"Refund selected paid orders"** → `refund_order()` | Lock + "sirf paid" check; orders checkout/seed se aate hain (`create_order` tenant match check karta hai) |
+| Ticket | `status`/`reply` editable, Add khula | status, reply, `approval_request`, `approval_decision` read-only; Add band; actions **Approve / Reject refund** → `decide_approval()` | Admin se banaya ticket `tickets.created` event nahi bhejta, to koi agent jawab hi nahi deta. Approve action bhi Kafka event bhejta hai aur worker graph resume karta hai |
+| Outbox | Read-only fields | + Add band, + filter **"published at: Empty"** | Haath se banayi row Kafka par asli event ban jati; khali `published_at` ki lambi list = relay band hai |
+| Customer | Sirf profile | + **Orders aur Tickets inline** (read-only, link ke saath) | Ek page par customer ki poori kahani |
+| Knowledge (naya) | Register hi nahi tha | Documents (chunk count) + chunks inline + chunk search; sab read-only, `embedding` chhupa | Text edit karne se purana embedding reh jata, aur search aisi baat match karti jo ab document mein hai hi nahi |
+
+### Gotcha
+Inline mein non-editable field (`created_at`) ho to `FieldError` aata hai. `readonly_fields` mein bhi likhna padta hai: `fields = readonly_fields = [...]`.
+
+### Admin mein kya nahi hai
+LangGraph checkpoint tables (Django models nahi) → Beekeeper. Chat memory → Redis (`redis-cli`). Superuser **saare tenants** dekhta hai. Har company ke staff ko sirf apna data dikhana JWT + roles wale lesson mein hoga.
+
+### Test
+Script ne har registered model ki list, detail aur add page superuser ke taur par khola: sab list/detail **200**; Order, Ticket, Outbox, Knowledge ka add **403** (umeed ke mutabiq).
