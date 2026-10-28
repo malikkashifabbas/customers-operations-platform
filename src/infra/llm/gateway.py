@@ -17,4 +17,5 @@ def get_chat_model(*, temperature: float = 0, model: str | None = None) -> BaseC
         model or env.llm_model,
         api_key=env.llm_api_key.get_secret_value(),
         temperature=temperature,
+        max_retries=env.llm_max_retries,
     )

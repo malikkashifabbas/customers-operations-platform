@@ -66,6 +66,25 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `X-Tenant-Public-Id` + `X-Staff-Key` (`hmac.compare_digest`) | Arzi staff auth (JWT roles tak) | `core/staff.py` |
 | `uv run python playground/lesson13_approval.py` | A failed / B reject / C approve / D chat — PASS/FAIL | playground |
 
+### 1D. Supervisor + subgraphs (Lesson 14)
+
+| Code | Kya karta hai | Kahan |
+|---|---|---|
+| `DOMAINS = {spec.name: spec for spec in (BILLING, ACCOUNT, KNOWLEDGE)}` | Registry: naya domain = folder + ek line | `agents/registry.py` |
+| `DomainSpec(name, description, build)` | `description` = supervisor ka menu | `agents/core/domain.py` |
+| `build_react_subgraph(all_tools=, tools_for=, prompt_for=, context_schema=)` | Ek generic ReAct subgraph, domain sirf tools + prompt deta hai | `agents/core/react_subgraph.py` |
+| `with_structured_output(Route, include_raw=True)` → `routes` | Supervisor: kaun se specialist (jawab nahi deta) | `agents/orchestrator/supervisor.py` |
+| `return [Send(name, payload) for name in state["routes"]]` | **Map**: specialists parallel, ek superstep mein | `orchestrator/graph.py::route_to_domains` |
+| `add_conditional_edges("supervisor", route_to_domains, list(DOMAINS))` | Send ke liye mumkin manzilein batao | graph.py |
+| `add_node(name, specialist(spec), input_schema=DomainState)` | Specialist ko sirf `messages` + `language` | graph.py |
+| `subgraph.invoke(state, context=runtime.context)` → sirf naye messages | Subgraph ko node ke andar chalao; parent ka checkpointer namespace `billing:<task id>` mein | graph.py::specialist |
+| `response_metadata["domain"] = "billing"` | Draft ka label (LLM API ko nahi jata) | graph.py::specialist |
+| `[RemoveMessage(id=d.id) for d in drafts] + [merged]` | **Reduce**: compose 2+ drafts ko ek jawab banata hai | graph.py::compose |
+| ⚠️ Parallel nodes ek plain key (`language`) na likhein | `InvalidUpdateError`; reducer wali key (`messages`) theek hai | — |
+| SSE `routing` + multi-domain mein sirf `compose` tokens | Do specialists ke tokens aapas mein na milein | `agents/core/streaming.py` |
+| `LLM_MAX_RETRIES=6` → `init_chat_model(..., max_retries=)` | 429 par `retry-after` ke mutabiq ruk kar dobara | `infra/llm/gateway.py` |
+| `uv run python playground/lesson14_eval.py` | Routing + "ek hi jawab" PASS/FAIL | playground |
+
 ---
 
 ## 2. Kafka (dak-khana / post office)

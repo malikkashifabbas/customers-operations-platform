@@ -20,6 +20,8 @@ class Env(BaseSettings):
     llm_model: str = "groq:openai/gpt-oss-120b"
     # Small fast model for the guardrail classifier; empty means "use llm_model".
     llm_guard_model: str | None = None
+    # Retries on 429/5xx; the provider SDK waits for its retry-after header (up to 60s) between tries.
+    llm_max_retries: int = 6
     # Optional so Django still starts without a key; accepts the generic or the provider-specific name.
     llm_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("LLM_API_KEY", "GROQ_API_KEY"))
 

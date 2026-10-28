@@ -25,3 +25,5 @@ class ChatOut(Schema):
     blocked_reason: str | None = None
     output_flags: list[str] = []
     output_retries: int = 0
+    # Which domain specialists the supervisor picked (empty when the input guard refused).
+    routes: list[str] = []

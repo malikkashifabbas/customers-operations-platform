@@ -112,7 +112,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "chat", "messages"]
             },
-            "description": "Waits for the full answer. Response:\n```json\n{\n  \"conversation_id\": \"postman-demo-1\",\n  \"reply\": \"Here are your recent orders: ...\",\n  \"tool_calls\": [{\"name\": \"list_my_orders\", \"args\": {}}],\n  \"llm_calls\": 2,\n  \"tokens\": 1366,\n  \"latency_ms\": 3780,\n  \"blocked_reason\": null,\n  \"output_flags\": [],\n  \"output_retries\": 0\n}\n```\n`blocked_reason` (input guard): `other_customer` | `prompt_injection` | `off_topic` when the question was refused before the agent ran (then `reply` is a fixed refusal and `tool_calls` is empty).\n`output_flags` (output guard): non-empty when the agent's reply had an ungrounded email / link / order number or a banned claim (\"payment link\", \"I have refunded\") The agent first gets **one rewrite** with the reason (`output_retries: 1`); only if the rewrite is still unsafe is it replaced by a safe reply. `llm_calls` / `tokens` include the guard classifier and rejected drafts.\n503 `ASSISTANT_UNAVAILABLE` if the LLM provider fails (rate limit, network).\n409 `CONVERSATION_BUSY` if the previous message in the same `conversation_id` is still being answered (Redis lock).\n429 `RATE_LIMITED` after 10 messages per customer per minute.\nChat memory is kept in Redis for 24 hours after the last message."
+            "description": "Waits for the full answer. Response:\n```json\n{\n  \"conversation_id\": \"postman-demo-1\",\n  \"reply\": \"Here are your recent orders: ...\",\n  \"tool_calls\": [{\"name\": \"list_my_orders\", \"args\": {}}],\n  \"llm_calls\": 2,\n  \"tokens\": 1366,\n  \"latency_ms\": 3780,\n  \"blocked_reason\": null,\n  \"output_flags\": [],\n  \"output_retries\": 0,\n  \"routes\": [\"billing\"]\n}\n```\n`blocked_reason` (input guard): `other_customer` | `prompt_injection` | `off_topic` when the question was refused before the agent ran (then `reply` is a fixed refusal and `tool_calls` is empty).\n`output_flags` (output guard): non-empty when the agent's reply had an ungrounded email / link / order number or a banned claim (\"payment link\", \"I have refunded\") The agent first gets **one rewrite** with the reason (`output_retries: 1`); only if the rewrite is still unsafe is it replaced by a safe reply. `llm_calls` / `tokens` include the guard classifier, the supervisor and rejected/merged drafts.\n`routes` (Lesson 14): which specialists the supervisor picked — `billing` (orders, payments, spending, refunds), `account` (profile), `knowledge` (policies; no knowledge base yet). Two or more = answered in parallel and merged into one reply.\n503 `ASSISTANT_UNAVAILABLE` if the LLM provider fails (rate limit, network).\n409 `CONVERSATION_BUSY` if the previous message in the same `conversation_id` is still being answered (Redis lock).\n429 `RATE_LIMITED` after 10 messages per customer per minute.\nChat memory is kept in Redis for 24 hours after the last message."
           }
         },
         {
@@ -157,7 +157,59 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "chat", "messages", "stream"]
             },
-            "description": "Server-Sent Events (`text/event-stream`). Each event is `event: <type>` + `data: <json>` + blank line:\n\n| event | data | frontend action |\n|---|---|---|\n| `start` | `{conversation_id}` | save the id for the next message |\n| `tool_call` | `{name, args}` | show \"checking your orders...\" |\n| `tool_result` | `{name, content}` | optional (debug) |\n| `token` | `{text}` | append text to the chat bubble |\n| `guardrail` | `{blocked_reason}` | question refused before the agent ran; a `token` with the refusal follows |\n| `reset` | `{}` | output guard rejected the draft and asked for one rewrite: **clear** the bubble, new tokens follow |\n| `replace` | `{text}` | output guard caught an unsafe reply: **replace** the whole bubble text with `text` |\n| `done` | `{conversation_id, latency_ms}` | stop the typing indicator |\n| `error` | `{code, message}` | show the message |\n\nBrowser: use `fetch()` + `response.body.getReader()` (EventSource only supports GET)."
+            "description": "Server-Sent Events (`text/event-stream`). Each event is `event: <type>` + `data: <json>` + blank line:\n\n| event | data | frontend action |\n|---|---|---|\n| `start` | `{conversation_id}` | save the id for the next message |\n| `routing` | `{domains}` | which specialists work on this message (debug / \"checking your orders and profile...\") |\n| `tool_call` | `{name, args}` | show \"checking your orders...\" |\n| `tool_result` | `{name, content}` | optional (debug) |\n| `token` | `{text}` | append text to the chat bubble |\n| `guardrail` | `{blocked_reason}` | question refused before the agent ran; a `token` with the refusal follows |\n| `reset` | `{}` | output guard rejected the draft and asked for one rewrite: **clear** the bubble, new tokens follow |\n| `replace` | `{text}` | output guard caught an unsafe reply: **replace** the whole bubble text with `text` |\n| `done` | `{conversation_id, latency_ms}` | stop the typing indicator |\n| `error` | `{code, message}` | show the message |\n\nBrowser: use `fetch()` + `response.body.getReader()` (EventSource only supports GET)."
+          }
+        },
+        {
+          "name": "Ask two things at once (supervisor + compose)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('two specialists', () => pm.expect(pm.response.json().routes).to.have.members(['account', 'billing']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-Public-Id",
+                "value": "{{tenantPublicId}}"
+              },
+              {
+                "key": "X-Customer-Public-Id",
+                "value": "{{customerPublicId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"what is my email and why did ORD-1002 fail?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "messages"
+              ]
+            },
+            "description": "Lesson 14: the supervisor sends the message to `account` and `billing` in parallel (LangGraph `Send`); `compose` merges both answers into ONE reply. In the SSE version only compose's tokens are streamed, so the two specialists never interleave."
           }
         }
       ]
@@ -220,7 +272,7 @@
               { "key": "Last-Event-ID", "value": "", "disabled": true, "description": "Enable and paste an event id to resume after it" }
             ],
             "url": { "raw": "{{baseUrl}}/api/tickets/{{ticketPublicId}}/stream", "host": ["{{baseUrl}}"], "path": ["api", "tickets", "{{ticketPublicId}}", "stream"] },
-            "description": "Live events from the worker, stored in a Redis Stream (kept 1 hour). Open it any time: you always get the **full history from the start**, then live events.\n\n| event | data |\n|---|---|\n| `status` | `{status}` — current DB status, always first (no id) |\n| `processing` | `{}` — worker started |\n| `tool_call` / `tool_result` | agent used a tool |\n| `token` | `{text}` — reply text, piece by piece (append to the bubble) |\n| `guardrail` | `{blocked_reason}` — question refused before the agent ran |\n| `replace` | `{text}` — output guard replaced an unsafe reply: swap the bubble text |\n| `reset` | `{}` — output guard rejected a draft: clear the bubble, the rewrite's tokens follow |\n| `approval_required` | `{type, order_number, amount, reason, reply}` — agent paused for a staff refund approval; stream ends while waiting (status `waiting_approval`) |\n| `approval_decided` | `{approved}` — staff decided; the agent resumes and the usual events follow |\n| `answered` | `{reply}` — full final reply (stream ends) |\n| `failed` | `{reply: \"\"}` — worker gave up (stream ends) |\n| `timeout` | nothing for 120s (stream ends) |\n\nEvery event except `status` has an `id:` (Redis entry id, e.g. `1793086122728-0`). To **resume** after a dropped connection, send header `Last-Event-ID: <last id>` — you get only newer events (browsers' EventSource does this automatically). `: keep-alive` comment lines arrive every 15s while waiting; ignore them. `retry: 3000` tells the browser to reconnect after 3s.\n\nOld ticket whose stream expired: `status` + `answered` from the database."
+            "description": "Live events from the worker, stored in a Redis Stream (kept 1 hour). Open it any time: you always get the **full history from the start**, then live events.\n\n| event | data |\n|---|---|\n| `status` | `{status}` — current DB status, always first (no id) |\n| `processing` | `{}` — worker started |\n| `routing` | `{domains}` — specialists picked by the supervisor |\n| `tool_call` / `tool_result` | agent used a tool |\n| `token` | `{text}` — reply text, piece by piece (append to the bubble) |\n| `guardrail` | `{blocked_reason}` — question refused before the agent ran |\n| `replace` | `{text}` — output guard replaced an unsafe reply: swap the bubble text |\n| `reset` | `{}` — output guard rejected a draft: clear the bubble, the rewrite's tokens follow |\n| `approval_required` | `{type, order_number, amount, reason, reply}` — agent paused for a staff refund approval; stream ends while waiting (status `waiting_approval`) |\n| `approval_decided` | `{approved}` — staff decided; the agent resumes and the usual events follow |\n| `answered` | `{reply}` — full final reply (stream ends) |\n| `failed` | `{reply: \"\"}` — worker gave up (stream ends) |\n| `timeout` | nothing for 120s (stream ends) |\n\nEvery event except `status` has an `id:` (Redis entry id, e.g. `1793086122728-0`). To **resume** after a dropped connection, send header `Last-Event-ID: <last id>` — you get only newer events (browsers' EventSource does this automatically). `: keep-alive` comment lines arrive every 15s while waiting; ignore them. `retry: 3000` tells the browser to reconnect after 3s.\n\nOld ticket whose stream expired: `status` + `answered` from the database."
           }
         }
       ]

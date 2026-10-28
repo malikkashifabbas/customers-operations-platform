@@ -1077,3 +1077,79 @@ sequenceDiagram
 
 ### Ek asli debugging sabaq
 Pehla E2E fail hua: agent ne refund tool chalaya hi nahi aur purane v3 prompt jaisa jawab diya. Wajah: dopahar 2:55 se ek **purana worker** chal raha tha (11B ke test ka) jo usi consumer group `agent-workers` mein tha. Kafka ne partition **usay** de diya. Sabaq: code badlo to **saare** workers restart karo. Consumer group mein jo bhi process hai, wo kaam utha sakta hai, chahe wo purana code chala raha ho. Production mein deploy isi liye **rolling restart** karta hai.
+
+## Learning 22 ⭐: Supervisor + subgraphs — ek manager, kai specialist (multi-agent)
+
+**Date:** 27 Oct 2026 · **Files:** `agents/orchestrator/` (`graph.py`, `supervisor.py`, `prompts/supervisor.v1.md`, `prompts/compose.v1.md`), `agents/registry.py`, `agents/core/react_subgraph.py`, `agents/core/domain.py`, `agents/domains/billing|account|knowledge/` (`spec.py` + `prompts/system.v1.md`), `agents/core/streaming.py` (`routing`, multi-domain tokens), `apps/chat/services.py` + `workers/handlers/tickets.py` (ab orchestrator), `infra/llm/gateway.py` (`max_retries`)
+
+### Masla
+Ek agent ke paas sab tools aur ek lamba prompt tha. Har naye domain (policies, delivery, tech) ke saath prompt aur lamba hota, aur LLM ke ghalat tool chunne ka khatra barhta.
+
+### Naya graph
+```mermaid
+graph TD
+  START --> guard_input
+  guard_input -->|blocked| refuse
+  guard_input -->|allowed| supervisor
+  supervisor -->|"Send (1..3)"| billing
+  supervisor -->|Send| account
+  supervisor -->|Send| knowledge
+  billing --> compose
+  account --> compose
+  knowledge --> compose
+  compose --> guard_output
+  guard_output -->|"rewrite (feedback)"| compose
+  guard_output --> END
+  refuse --> END
+```
+| Node | Kaam | LLM? |
+|---|---|---|
+| `supervisor` | Sirf faisla karta hai: kaun se specialist (`with_structured_output(Route)`). Jawab kabhi nahi deta | Haan (chhota model ho sakta hai: `LLM_GUARD_MODEL`) |
+| `billing` | Orders, kharcha, refund (ticket mein `interrupt`) | Haan, ReAct subgraph |
+| `account` | Profile | Haan, ReAct subgraph |
+| `knowledge` | Policies. Abhi **fixed text**, kyunki LLM bina knowledge base ke office hours ghadta. Lesson 15 (RAG) yahan lagega | Nahi |
+| `compose` | 2+ specialists ho to jawab **jodta** hai aur unke drafts mita deta hai. 1 ho to kuch nahi karta (koi LLM call nahi). Guard reject kare to dobara likhta hai | Sirf zaroorat par |
+
+### 6 tasawwur
+1. **`Send` (map-reduce):** `route_to_domains()` `[Send("account", payload), Send("billing", payload)]` lautata hai, aur dono specialists **ek hi superstep mein parallel** chalte hain. `compose` dono khatam hone ke baad **ek dafa** chalta hai, kyunki dono ki edges usi par aati hain.
+2. **Subgraph ko node ke andar invoke karna:** `specialist(spec)` ek wrapper node hai jo `subgraph.invoke(state)` chalata hai aur sirf **naye** messages lautata hai. Agar subgraph seedha node hota to woh poori message list (purani history samet) lautata aur stream mein purane `tool_call` dobara dikhte.
+3. **`input_schema=DomainState`:** specialist ko sirf `messages` + `language` milte hain, poori parent state nahi. Language ko woh **wapis nahi likhta**. Agar do parallel nodes ek hi plain key (`language`) likhein to LangGraph `InvalidUpdateError` deta hai (ek superstep mein ek value). `messages` par `add_messages` reducer hai, is liye wahan dono likh sakte hain.
+4. **Checkpointer sirf parent par:** subgraph `compile()` bina checkpointer ke hota hai aur parent ka checkpointer **apne namespace** (`billing:<task id>`) mein istemal karta hai. Redis key ka `__empty__` hissa yahi namespace tha (Lesson 11B ka sawal). Refund ka `interrupt()` ab billing subgraph ke **andar** se uthta hai aur parent ka `Command(resume)` wahin pahunchta hai (Lesson 13 ke 4/4 tests ab bhi pass).
+5. **Draft tagging + compose:** wrapper specialist ke aakhri jawab par `response_metadata["domain"] = "billing"` lagata hai. `response_metadata` LLM API ko **nahi** bheja jata, is liye ye mehfooz label hai. `compose` in drafts ko `RemoveMessage` se hata kar ek jawab daalta hai, taa ke agle sawal ki history saaf rahe.
+6. **Streaming:** do specialists ke tokens saath stream hon to aapas mein mil jayenge ("Your emOrder ORDail is…"). `agent_events` supervisor ka `routes` dekhta hai: 1 specialist ho to us ke tokens, 2+ hon to **sirf compose** ke tokens. Naya SSE event `routing` `{domains}` hai.
+
+### Registry: naya domain = ek folder + ek line
+```python
+DOMAINS = {spec.name: spec for spec in (BILLING, ACCOUNT, KNOWLEDGE)}
+```
+`DomainSpec(name, description, build)`. `description` hi supervisor ka menu hai. Generic ReAct subgraph (`core/react_subgraph.py`) har domain ke liye ek hi hai; domain sirf `tools_for` aur `prompt_for` deta hai.
+
+### Qeemat (trade-off)
+| | Ek agent (L13) | Multi-agent (L14) |
+|---|---|---|
+| Ek domain wala sawal | guard + agent (2–3 calls) | guard + supervisor + specialist (3–4 calls) |
+| Do domain wala sawal | guard + agent (ek lamba prompt) | guard + supervisor + **2 parallel** + compose (5 calls) |
+| Prompt | Sab rules + sab tools | Har specialist ka chhota, focused prompt |
+| Naya domain | Prompt aur tools mein jodo (sab par asar) | Naya folder + registry line (baqi par asar nahi) |
+
+**Rate limit ka asli sabaq:** Groq free tier = 8000 tokens/minute. Parallel specialists ne pehli dafa **429** de diya ("try again in 4.3s"). Hal: `LLM_MAX_RETRIES=6`. Groq SDK `retry-after` header (60s tak) ke mutabiq ruk kar dobara koshish karta hai. Production mein yahi tareeqa hai (backoff + retry-after), aur `LLM_GUARD_MODEL` ko alag model par rakhne se guard/supervisor ki **alag limit** milti hai.
+
+### Ek bug jo test ne pakda
+Specialist prompts mein v4 ki ye line chhoot gayi thi: *"zabaan sirf latest message se tay hoti hai"*. Natija: Roman Urdu baat-cheet ke baad English sawal ka jawab Roman Urdu mein aaya (`lesson12_eval` 15/16). Line wapis daali to theek ho gaya. **Prompt split karte waqt har rule ka hisaab rakho.** Regression eval isi liye hai.
+
+### Streaming ka ek gotcha
+Wrapper wale tareeqe mein specialist ke andar ke `tool_call` / `tool_result` events tab aate hain jab poora specialist node **khatam** ho. Refund ticket ke stream mein `routing` ke baad seedha `approval_required` aaya, beech mein `tool_call request_refund` nahi, kyunki billing node `interrupt` par ruka aur khatam nahi hua. Live andar ke events chahiye hon to `graph.stream(..., subgraphs=True)` use hota hai, jo `(namespace, mode, data)` deta hai. Tokens (`messages` mode) phir bhi live aate hain, kyunki wo callbacks se nikalte hain.
+
+### Tests (27 Oct 2026)
+| Test | Natija |
+|---|---|
+| `lesson14_eval.py` (routing) | **7/7**: orders → billing, email → account, return policy → knowledge, phone + kharcha → account + billing (ek jawab), Roman Urdu multi → dono, follow-up "and what is my email?" → account |
+| SSE multi-domain ("email + ORD-1002 kyun fail hua") | `start → routing [account, billing] → tool_call×2 → tool_result×2 → token×31 (sirf compose) → done` |
+| `lesson13_approval.py` (refund interrupt ab billing subgraph ke andar) | **4/4** |
+| Kafka E2E refund | `routing [billing] → approval_required` → staff approve 202 → 409 → `approval_decided → tool_result refund_status done → answered`, DB `refunded` ✅ |
+| `lesson12_eval.py` (guardrails regression) | 15/16 → language fix → **16/16** |
+| Redis | `checkpoint_latest` keys: 26 `__empty__` (parent) + 8 `billing:<task-id>` (subgraph namespace) |
+
+### Abhi kamzor
+- Approve ke baad agent ne kaha "amount original payment method mein wapis aa jayegi". Ye tool result mein nahi tha (halki si ghadhi hui baat). Grounding check sirf email/link/ORD dekhta hai.
+- Har sawal par supervisor ki extra call lagti hai. Seedhe sawalon ke liye keyword shortcut, ya guard + supervisor ko ek call mein milana, latency ka agla qadam ho sakta hai.

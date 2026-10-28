@@ -14,7 +14,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from agents.core.checkpointers import get_redis_checkpointer
 from agents.core.streaming import STREAM_MODES, agent_events
 from agents.domains.support.context import SupportContext
-from agents.domains.support.graph import build_graph
+from agents.orchestrator.graph import build_graph
 from core.limits import CHAT_MESSAGES_PER_MINUTE, CONVERSATION_LOCK_SECONDS
 from core.sse import sse
 from infra.cache import locks, ratelimit
@@ -62,18 +62,20 @@ def run_chat(*, principal: CustomerPrincipal, message: str, conversation_id: str
             raise AssistantUnavailable() from exc
 
     new_ai = [m for m in result["messages"][before + 1 :] if isinstance(m, AIMessage)]
-    # Classifier calls and rejected drafts are not in the message list, so the guards report their own usage.
-    guard_usage = result.get("guard_usage") or {"llm_calls": 0, "tokens": 0}
+    # Guards, supervisor and merged/rejected drafts are not in the message list, so they report their own usage.
+    hidden = [result.get("guard_usage") or {}, result.get("routing_usage") or {}]
+    hidden_usage = {key: sum(usage.get(key, 0) for usage in hidden) for key in ("llm_calls", "tokens")}
     return {
         "conversation_id": conversation_id,
         "reply": new_ai[-1].content if new_ai else "",
         "tool_calls": [{"name": c["name"], "args": c["args"]} for m in new_ai for c in m.tool_calls],
-        "llm_calls": len([m for m in new_ai if m.usage_metadata]) + guard_usage["llm_calls"],
-        "tokens": sum((m.usage_metadata or {}).get("total_tokens", 0) for m in new_ai) + guard_usage["tokens"],
+        "llm_calls": len([m for m in new_ai if m.usage_metadata]) + hidden_usage["llm_calls"],
+        "tokens": sum((m.usage_metadata or {}).get("total_tokens", 0) for m in new_ai) + hidden_usage["tokens"],
         "latency_ms": int((time.perf_counter() - started) * 1000),
         "blocked_reason": result.get("blocked_reason"),
         "output_flags": result.get("output_flags", []),
         "output_retries": result.get("output_retries", 0),
+        "routes": result.get("routes", []),
     }
 
 

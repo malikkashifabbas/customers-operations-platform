@@ -12,7 +12,7 @@ from langgraph.types import Command
 from agents.core.checkpointers import get_pool_checkpointer
 from agents.core.streaming import STREAM_MODES, agent_events
 from agents.domains.support.context import SupportContext
-from agents.domains.support.graph import build_graph
+from agents.orchestrator.graph import build_graph
 from apps.tickets import selectors, services
 from apps.tickets.models import Ticket, TicketStatus
 from core.limits import TICKET_LOCK_SECONDS

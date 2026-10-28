@@ -10,7 +10,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from agents.domains.support.context import SupportContext
-from agents.domains.support.graph import build_graph
+from agents.orchestrator.graph import build_graph
 from apps.customers.models import Customer
 from apps.orders.models import Order, OrderStatus
 from core.models import Tenant

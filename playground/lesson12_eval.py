@@ -12,7 +12,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
 from agents.domains.support.context import SupportContext
-from agents.domains.support.graph import build_graph
+from agents.orchestrator.graph import build_graph
 from apps.customers.models import Customer
 from core.models import Tenant
 
