@@ -76,7 +76,8 @@ def compose(state: OrchestratorState, runtime: Runtime[SupportContext]) -> dict:
 
     question = str(turn[0].content)
     facts = "\n".join(f"- {m.name}: {m.content}" for m in turn if isinstance(m, ToolMessage))
-    answers = "\n".join(f"[{m.response_metadata['domain']}] {m.content}" for m in drafts)
+    # "billing specialist:" and not "[billing]": square brackets are reserved for real [source] citations.
+    answers = "\n".join(f"{m.response_metadata['domain']} specialist: {m.content}" for m in drafts)
     prompt = load_prompt(
         COMPOSE_PROMPT, company_name=runtime.context.tenant.name, reply_language=REPLY_LANGUAGE[state.get("language", "english")]
     )

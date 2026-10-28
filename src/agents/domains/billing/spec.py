@@ -30,7 +30,7 @@ def prompt_for(state, context: SupportContext, tools: list) -> str:
 
 SPEC = DomainSpec(
     name="billing",
-    description="the customer's orders, order status, failed or pending payments, how much they spent, refunds",
+    description="the customer's OWN orders: order status, why their order failed, how much they spent, asking to refund a specific order",
     build=lambda: build_react_subgraph(
         all_tools=[*READ_TOOLS, request_refund], tools_for=tools_for, prompt_for=prompt_for, context_schema=SupportContext
     ),

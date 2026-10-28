@@ -15,7 +15,7 @@ from infra.llm.gateway import get_chat_model
 
 logger = logging.getLogger(__name__)
 
-SUPERVISOR_PROMPT = Path(__file__).parent / "prompts" / "supervisor.v1.md"
+SUPERVISOR_PROMPT = Path(__file__).parent / "prompts" / "supervisor.v2.md"
 FALLBACK_ROUTES = ["billing", "account"]
 TRANSCRIPT_MESSAGES = 6
 

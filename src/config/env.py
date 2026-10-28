@@ -22,6 +22,8 @@ class Env(BaseSettings):
     llm_guard_model: str | None = None
     # Retries on 429/5xx; the provider SDK waits for its retry-after header (up to 60s) between tries.
     llm_max_retries: int = 6
+    # Local multilingual embedding model (FastEmbed); 384 dimensions, see infra/llm/embeddings.py.
+    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     # Optional so Django still starts without a key; accepts the generic or the provider-specific name.
     llm_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("LLM_API_KEY", "GROQ_API_KEY"))
 

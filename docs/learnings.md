@@ -1153,3 +1153,83 @@ Wrapper wale tareeqe mein specialist ke andar ke `tool_call` / `tool_result` eve
 ### Abhi kamzor
 - Approve ke baad agent ne kaha "amount original payment method mein wapis aa jayegi". Ye tool result mein nahi tha (halki si ghadhi hui baat). Grounding check sirf email/link/ORD dekhta hai.
 - Har sawal par supervisor ki extra call lagti hai. Seedhe sawalon ke liye keyword shortcut, ya guard + supervisor ko ek call mein milana, latency ka agla qadam ho sakta hai.
+
+## Learning 23 ⭐: RAG — pgvector, hybrid search, agentic RAG (`nodes.py`) aur eval se seekhna
+
+**Date:** 28 Oct 2026 · **Files:** `src/devtools/knowledge/<tenant>/*.md` (12 policy documents), `apps/knowledge/` (models, migrations `0001` + `0002`, `chunking.py`, `services/documents.py`, `selectors.py`), `infra/llm/embeddings.py`, `devtools/.../seed_knowledge.py`, `agents/domains/knowledge/` (`graph.py`, `nodes.py`, `tools.py`, `prompts/query|grade|rewrite|answer.v1.md`), `orchestrator/prompts/supervisor.v2.md`, `agents/core/streaming.py`, `playground/lesson15_retrieval.py`, `lesson15_eval.py`
+
+### RAG ka poora safar
+```mermaid
+graph LR
+  A[".md documents"] -->|"seed_knowledge: ## sections → chunks"| B["Chunk + 'Title › Section' header"]
+  B -->|"FastEmbed (384-dim)"| C[("knowledge_chunk: text + embedding + tenant")]
+  Q["Customer question"] -->|"query node: English keywords"| S["search_policies tool"]
+  S -->|"vector (HNSW) + keyword (GIN) → RRF"| C
+  C --> G{"grade: relevant?"}
+  G -->|no, once| R["rewrite query"] --> S
+  G -->|yes| ANS["answer + [Document, section]"]
+```
+
+### Har hissa ek line mein
+| Hissa | Kya | Kyun |
+|---|---|---|
+| `KnowledgeDocument` | Ek policy file, `content_hash` (sha256) ke saath | Seed dobara chalao to sirf badli files dobara embed hon |
+| `KnowledgeChunk` | `text` + `embedding VectorField(384)` + **tenant** | Tenant document se dohraya gaya, taa ke vector search ek hi table filter kare, join ke bagair |
+| Migration mein `VectorExtension()` | `CREATE EXTENSION vector` | pgvector image mein extension hota hai, lekin **band** hota hai. `makemigrations` ise khud nahi likhta |
+| `HnswIndex(... vector_cosine_ops)` | Tez "nearest neighbour" index | Lakhon chunks par full scan nahi |
+| `GinIndex(SearchVector("text"))` | Full-text (keyword) index | Hybrid search ka doosra hissa |
+| `chunking.py` | `##` par tukde, lambe section paragraphs par, tables poore | Table ke andar khali line nahi hoti, is liye blank-line split table nahi todta |
+| Chunk header `"Returns and Refunds Policy › 4. Sale items"` | Har tukda batata hai ke wo kahan se hai | Akele "7 days" wale tukde ka matlab context ke bina gum ho jata hai |
+| `infra/llm/embeddings.py` | Local FastEmbed, `lru_cache`, lazy import | Koi API key nahi; model `.cache/fastembed` (gitignored) mein ek dafa download hota hai |
+
+### Embedding model: plan aur haqeeqat
+Plan mein `multilingual-e5-small` socha tha, lekin `TextEmbedding.list_supported_models()` check kiya to FastEmbed usay support hi nahi karta. Liya **`paraphrase-multilingual-MiniLM-L12-v2`** (384-dim, 0.22 GB, 50+ zabanein, prefix ki zaroorat nahi). **Sabaq:** library ka dawa nahi, list check karo. Model aur `EMBEDDING_DIMENSIONS` hamesha saath badalte hain: column usi dimension se banta hai.
+
+### Agentic RAG (`nodes.py`, LangGraph ka mashhoor pattern)
+| Node | Kaam |
+|---|---|
+| `generate_query_or_respond` | Sawal ko **English keywords** mein search query banata hai (Roman Urdu → English, kyunki documents English mein hain); do topic hon to do searches |
+| `retrieve` | `ToolNode([search_policies])`. Result **ToolMessage** hai, is liye output guard ki grounding chalti hai (`support@demo-company.example` tabhi jaiz jab document mein ho) |
+| `grade_documents` (edge function) | LLM `Grade(relevant: bool)`: nateeje kaam ke hain? |
+| `rewrite_question` | Ek dafa nayi query (synonyms). Ye ek **tayyar tool call** banata hai, koi nayi HumanMessage nahi, taa ke customer ki history saaf rahe |
+| `generate_answer` | Sirf retrieved text se jawab, **aaj ki tareekh** (transition rules ke liye) aur `[Document, section]` citation ke saath |
+`graph.py` mein sirf jodna hai, nodes `nodes.py` mein. Ye wahi pattern hai jis par aap ne pichli dafa poocha tha.
+
+### Eval ne kya sikhaya (asli kahani)
+**Pehla run: 14/19.** Paanch fail, paanch alag sabaq:
+| Fail | Wajah | Hal |
+|---|---|---|
+| "COD refund kaise milega", "6 month installment fee" | Supervisor ne "refund/payment" dekh kar **billing** ko bheja | `supervisor.v2.md`: *general rules → knowledge, customer ka apna data → billing*; billing description: "customer's **OWN** orders" |
+| "Support email?" | Vector search ne "How to reach us" nahi dhoonda: chhota model khaas alfaaz (email, COD) mein kamzor hai | **Hybrid search**: pgvector + Postgres full-text (OR query), **Reciprocal Rank Fusion** `score = Σ 1/(60 + rank)` |
+| "Khula laptop, fee?" | Query `return fee` ban gayi, "opened" gum | Query prompt: *jo details jawab badalti hain unhein rakho* (opened, Final Sale, COD…) |
+| Roman Urdu COD | Compose ne citation hata di | Compose rule: citations rakho |
+**Doosra run: 18/19.** Aakhri fail eval ki ghalti thi: model ne `15 %` likha (narrow space), check `15%` dhoond raha tha.
+
+Hybrid ka asar (`lesson15_retrieval.py`):
+| Sawal | Sirf vector top 3 | Hybrid |
+|---|---|---|
+| cash on delivery refund how long | §7 (COD table) **nahi** | §7 ✅ |
+| support email address | §2 **nahi** | §2 pehle number par ✅ |
+| COD order ka refund kitne din | Bekaar (distance 0.60) | Roman Urdu FAQ ✅ |
+
+### Teen bug jo raaste mein pakde
+1. **Lesson 14 ka chhupa bug: subgraph tokens stream nahi ho rahe the.** Specialist node ke **andar** `subgraph.invoke()` hota hai, aur LangGraph andar ke tokens tabhi bahar bhejta hai jab `stream(..., subgraphs=True)` ho. Lesson 14 ka SSE test multi-domain tha (text compose = parent se aata hai), is liye ye chhup gaya. Hal: chat aur worker mein `subgraphs=True`. `agent_events` ab `(namespace, mode, data)` samajhta hai: tokens har namespace se, updates sirf root se (warna tool calls do dafa aate).
+2. **`tool_choice="required"` ne graph crash kiya:** model ne tool nahi chalaya to Groq ne error de diya. Hal: flag hataya, aur **code** guarantee deta hai: tool call nahi aayi to code khud `_search_call(question)` banata hai. Wahi Lesson 12 wala usool: *flag/prompt darkhwast hai, code guarantee*.
+3. **Compose ne `[billing][account]` likha:** compose ko jawab `[billing] ...` format mein milte the, aur "citations rakho" rule ne un labels ko citation bana diya. Hal: format `billing specialist: ...`. Square brackets ab sirf asli citations ke liye hain.
+
+### Infra sabaq
+- **Docker band tha** (PC restart). `makemigrations` bhi DB se history check karta hai, is liye chupchaap atka raha. Pehle `docker ps` dekho.
+- **Groq daily limit (TPD 200k tokens)** khatam ho gayi. Per-minute (TPM) limit retry se hal hoti hai, lekin daily limit nahi. RAG ke sawal mehnge hain (guard + supervisor + query + grade + answer, aur bade chunks). Aakhri checks sirf test process mein `LLM_MODEL=groq:openai/gpt-oss-20b` se chalaye (alag quota). `.env` ko haath nahi lagaya. Mashwara: `LLM_GUARD_MODEL` chhota model.
+
+### Tests (28 Oct 2026)
+| Test | Natija |
+|---|---|
+| `seed_knowledge` | 12 documents → 84 chunks (Demo 43, Nimbus 41); dobara chalaya to sab `unchanged` |
+| `lesson15_retrieval.py` | Tenant isolation `assert` pass; hybrid > vector (upar table) |
+| `lesson15_eval.py` (19 jaal) | 14/19 → fixes → **18/19** (aakhri = eval ki ghalti, ab theek) |
+| `lesson14_eval.py` | **7/7** (compose label fix se pehle) |
+| `lesson12_eval.py` | 10/10 pass, phir Groq daily limit par ruka |
+| Streaming (20b model) | knowledge / billing / multi-domain: tokens stream, streamed = final, no leak; ticket refund `interrupt` `subgraphs=True` ke saath ✅ |
+| **Nayi Groq key ke saath (28 Oct)** | lesson15 **18/19**, lesson14 **7/7**, lesson13 **4/4**, lesson12 **11/11** (baqi 5 user ne roke) |
+| Aakhri fail: "I paid cash on delivery **and returned an item**, money back kaise?" → billing | Supervisor ne "I paid / I returned" ko customer ka apna data samjha. Rule joda: *apni situation + general rule (kaise, kitne din, fee) → knowledge; billing sirf tab jab order ka data bhi chahiye*. Dobara: **3/3** (COD → knowledge; "why did ORD-1002 fail" aur "refund ORD-1002" → sirf billing) |
+| Kafka refund E2E (Postman, naya `subgraphs=True` code) | ticket → `waiting_approval` (ORD-1001, 49.00 USD) → staff approve → `answered` ✅ |

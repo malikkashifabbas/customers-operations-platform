@@ -93,7 +93,10 @@ def _stream_events(message, conversation_id, config, context, lock_name, token) 
     started = time.perf_counter()
     try:
         yield sse("start", {"conversation_id": conversation_id})
-        stream = get_graph().stream({"messages": [HumanMessage(message)]}, config, context=context, stream_mode=STREAM_MODES)
+        # subgraphs=True: specialists run inside nodes, and their tokens only reach this stream with it.
+        stream = get_graph().stream(
+            {"messages": [HumanMessage(message)]}, config, context=context, stream_mode=STREAM_MODES, subgraphs=True
+        )
         for event, data in agent_events(stream):
             yield sse(event, data)
         yield sse("done", {"conversation_id": conversation_id, "latency_ms": int((time.perf_counter() - started) * 1000)})

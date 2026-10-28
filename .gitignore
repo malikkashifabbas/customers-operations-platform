@@ -12,3 +12,6 @@ wheels/
 # Secrets and local data
 .env
 db.sqlite3
+
+# Downloaded model files (FastEmbed)
+.cache/

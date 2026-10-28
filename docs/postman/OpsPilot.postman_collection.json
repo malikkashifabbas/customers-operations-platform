@@ -211,6 +211,61 @@
             },
             "description": "Lesson 14: the supervisor sends the message to `account` and `billing` in parallel (LangGraph `Send`); `compose` merges both answers into ONE reply. In the SSE version only compose's tokens are streamed, so the two specialists never interleave."
           }
+        },
+        {
+          "name": "Ask a policy question (RAG, cited answer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('knowledge specialist answered', () => pm.expect(body.routes).to.include('knowledge'));",
+                  "pm.test('policy search ran', () => pm.expect(body.tool_calls.map(t => t.name)).to.include('search_policies'));",
+                  "pm.test('answer has a [source] citation', () => pm.expect(body.reply).to.include('['));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-Public-Id",
+                "value": "{{tenantPublicId}}"
+              },
+              {
+                "key": "X-Customer-Public-Id",
+                "value": "{{customerPublicId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"I paid cash on delivery and returned an item. How do I get my money back and how long does it take?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "messages"
+              ]
+            },
+            "description": "Lesson 15: the supervisor routes general policy questions to the `knowledge` specialist, which searches this tenant's policy documents (hybrid: pgvector meaning + Postgres full-text keywords, merged with Reciprocal Rank Fusion), grades the results, rewrites the query once if they are off-topic, and answers only from the retrieved text with a `[Document, section]` citation.\n\nTry the same question with `X-Tenant-Public-Id: {{otherTenantPublicId}}` (NimbusTech — needs a NimbusTech customer id): the answer must come from NimbusTech's documents (no COD there), never Demo Company's."
+          }
         }
       ]
     },

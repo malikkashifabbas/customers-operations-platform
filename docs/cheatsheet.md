@@ -85,6 +85,28 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `LLM_MAX_RETRIES=6` → `init_chat_model(..., max_retries=)` | 429 par `retry-after` ke mutabiq ruk kar dobara | `infra/llm/gateway.py` |
 | `uv run python playground/lesson14_eval.py` | Routing + "ek hi jawab" PASS/FAIL | playground |
 
+### 1E. RAG — pgvector + hybrid search (Lesson 15)
+
+| Code | Kya karta hai | Kahan |
+|---|---|---|
+| `VectorExtension()` migration ke shuru mein | `CREATE EXTENSION vector` (makemigrations khud nahi likhta) | `apps/knowledge/migrations/0001_initial.py` |
+| `embedding = VectorField(dimensions=EMBEDDING_DIMENSIONS)` | 384 numbers ka column; model ke saath hi badlo | `apps/knowledge/models/chunk.py` |
+| `HnswIndex(fields=["embedding"], opclasses=["vector_cosine_ops"])` | Tez nearest-neighbour index | chunk.py |
+| `GinIndex(SearchVector("text", config="english"))` | Keyword (full-text) index | chunk.py |
+| `annotate(distance=CosineDistance("embedding", vec)).order_by("distance")` | Matlab se milte tukde (0 = same) | `apps/knowledge/selectors.py` |
+| `SearchQuery(a) \| SearchQuery(b)` + `.filter(search=query)` | Alfaaz ka OR match (`@@`, GIN use hota hai) | selectors.py |
+| `score += 1 / (60 + rank)` | **Reciprocal Rank Fusion**: dono searches ko milao | `hybrid_search_chunks` |
+| `TextEmbedding(model, cache_dir=...)` + `lru_cache` | Local embeddings, model ek dafa load | `infra/llm/embeddings.py` |
+| `parse_markdown()` → `"Title › Section
+..."` | `##` par chunks, tables poore, har chunk ka header | `apps/knowledge/chunking.py` |
+| `sha256(markdown)` == `content_hash` → `unchanged` | Seed idempotent, sirf badli files embed | `services/documents.py` |
+| `uv run src/manage.py seed_knowledge` | `devtools/knowledge/<tenant>/*.md` → DB | devtools |
+| query → `retrieve` → `grade_documents` → `generate_answer` / `rewrite_question` | Agentic RAG; steps `nodes.py`, wiring `graph.py` | `agents/domains/knowledge/` |
+| `if not response.tool_calls: response = _search_call(question)` | Search ki guarantee **code** se (`tool_choice="required"` crash karta hai) | `nodes.py` |
+| `graph.stream(..., subgraphs=True)` | Node ke andar wale subgraph ke tokens bhi stream hon | `apps/chat/services.py`, `workers/handlers/tickets.py` |
+| `uv run python playground/lesson15_retrieval.py` | Vector vs hybrid nateeje + tenant `assert` (bina LLM) | playground |
+| `uv run python playground/lesson15_eval.py` | 19 jaal wale sawal, PASS/FAIL | playground |
+
 ---
 
 ## 2. Kafka (dak-khana / post office)

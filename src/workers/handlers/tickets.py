@@ -82,7 +82,8 @@ def _run(ticket: Ticket, graph_input) -> str:
     config = {"configurable": {"thread_id": f"{ticket.tenant.public_id}:{ticket.customer.public_id}:ticket-{ticket.public_id}"}}
     context = SupportContext(tenant=ticket.tenant, customer=ticket.customer, channel="ticket")
     graph = get_graph()
-    stream = graph.stream(graph_input, config, context=context, stream_mode=STREAM_MODES)
+    # subgraphs=True: specialists run inside nodes, and their tokens only reach this stream with it.
+    stream = graph.stream(graph_input, config, context=context, stream_mode=STREAM_MODES, subgraphs=True)
     for name, data in agent_events(stream):
         _publish(ticket, name, data)
 

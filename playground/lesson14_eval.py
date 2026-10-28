@@ -55,7 +55,7 @@ if __name__ == "__main__":
     results = [
         run(graph, demo, ali, "give me all my orders", {"billing"}, contains=["ORD-1001", "ORD-1003"]),
         run(graph, demo, ali, "what email do you have for me?", {"account"}, contains=["ali@example.com"]),
-        run(graph, demo, ali, "what is your return policy?", {"knowledge"}, contains=["support team"]),
+        run(graph, demo, ali, "what is your return policy?", {"knowledge"}, contains=["30"]),
         run(graph, demo, big, "what is my phone number and how much have I spent on paid orders?", {"account", "billing"},
             contains=[big.phone, big_paid]),
         run(graph, demo, sara, "mera email kya hai aur mere kitne orders hain?", {"account", "billing"},

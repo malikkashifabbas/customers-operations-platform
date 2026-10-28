@@ -4,7 +4,7 @@
 > Ye project ki permanent history hai — kya bana, kyun bana, kahan hai, aur agla qadam kya hai.
 > **Har lesson mukammal hone par is file ko update karna lazmi hai** (neeche "Lesson log" aur "Current state").
 
-**Last updated:** 27 Oct 2026 — after Lesson 14 (supervisor + billing/account/knowledge subgraphs, `Send` fan-out, compose, registry). Lesson 14 abhi uncommitted.
+**Last updated:** 28 Oct 2026 — after Lesson 15 (RAG: 12 policy docs, pgvector + hybrid search, agentic RAG knowledge subgraph). Lesson 15 abhi uncommitted.
 
 ---
 
@@ -85,7 +85,7 @@
 opspilot/
 ├── MEMORY.md              ← ye file (project ki yaadasht)
 ├── CLAUDE.md              ← AI ke liye: pehle MEMORY.md parho
-├── docs/learnings.md      ← Learning 1–22 (har lesson ka sabaq)
+├── docs/learnings.md      ← Learning 1–23 (har lesson ka sabaq)
 ├── docs/walkthroughs/     ← zaroori files ki line-by-line wazahat + "senior ke sawal" (5-step template); har nayi walkthrough yahan
 ├── docs/cheatsheet.md     ← sab se zaroori code lines (LangGraph, Kafka, outbox, events, Redis, workers) — naya concept aaye to yahan bhi line jodo
 ├── docker-compose.yml     ← postgres+pgvector, redis, kafka, kafka-ui
@@ -129,6 +129,7 @@ opspilot/
 | 5 | customers app | Pehli API (Ninja), tenant guard, DomainError, unique phone per tenant; 10 tests pass incl. tenant isolation | L6, L7 |
 | — | Git | Commit `7a92e22` pushed to GitHub (Lessons 1–5) | — |
 | — | Project memory | `MEMORY.md` + `CLAUDE.md` banaye; commit `69ee763` pushed | — |
+| 15 | RAG (pgvector) | `src/devtools/knowledge/{demo-company,nimbustech}/*.md` (12 tricky policy docs, different numbers per tenant); **`apps/knowledge`** (`KnowledgeDocument` slug/title/version/content_hash, `KnowledgeChunk` tenant+section+text+`VectorField(384)`, migrations `0001` with `VectorExtension()` + HNSW, `0002` GIN full-text; `chunking.py`; `services.ingest_document` idempotent by sha256; `selectors.search_chunks` / `keyword_search_chunks` / **`hybrid_search_chunks` (RRF)**); `infra/llm/embeddings.py` (FastEmbed `paraphrase-multilingual-MiniLM-L12-v2`, cache `.cache/fastembed` gitignored, env `EMBEDDING_MODEL`); `seed_knowledge` command; **knowledge subgraph** `graph.py` + `nodes.py` (generate_query_or_respond → retrieve → grade_documents → generate_answer / rewrite_question once; `_search_call` fallback instead of tool_choice=required) + `tools.py` (`search_policies`) + prompts; `supervisor.v2.md` (general rules → knowledge, own data → billing); compose keeps citations, labels `billing specialist:`; **streaming `subgraphs=True`** (fixes L14 single-specialist tokens); deps `pgvector 0.4.2`, `fastembed 0.7.4`; tests: retrieval tenant assert, RAG eval 14/19 → 18/19 → supervisor rule (own situation + general rule → knowledge) fixed the COD case (3/3 recheck), lesson14 7/7, lesson13 4/4, lesson12 11/11 with the new Groq key | L23 ⭐ |
 | 14 | Supervisor + subgraphs | **`agents/orchestrator/`** (`graph.py`: guard_input → supervisor → `Send` to specialists → compose → guard_output ⇄ compose; `supervisor.py` structured `Route` with `include_raw`, fallback billing+account; prompts `supervisor.v1.md`, `compose.v1.md`); **`agents/registry.py`** (`DOMAINS`); `agents/core/react_subgraph.py` (generic ReAct subgraph, `DomainState`), `agents/core/domain.py` (`DomainSpec`); domains **billing** (orders/spending/refund), **account** (profile), **knowledge** (fixed text until RAG) each with `spec.py` + `prompts/system.v1.md`; specialist wrapper returns only new messages + `response_metadata["domain"]`; compose merges 2+ drafts (RemoveMessage) or rewrites on guard feedback; streaming `routing` event + only compose tokens when multi-domain; chat/worker now use orchestrator (support/graph.py kept as single-agent version + shared guard nodes); chat JSON `routes`; `LLM_MAX_RETRIES=6` (Groq 8000 TPM 429s); Postman multi-domain request; tests: lesson14_eval 7/7, lesson13 4/4, lesson12 16/16 (after restoring the latest-message language rule), Kafka refund E2E, Redis `billing:<task-id>` namespaces | L22 ⭐ |
 | 13 | Human approval (`interrupt`) | `request_refund` tool (read-only checks → `interrupt({type, order_number, amount, reason})` → `orders.refund_order` with `select_for_update`); `SupportContext.channel` (chat/ticket) + `tools_for()` (chat never gets the refund tool); **`system.v4.md`** (`{capabilities}` from bound tools, `{refund_rule}` per channel); Ticket `waiting_approval` + `approval_request`/`approval_decision` (migration `tickets.0002`); `decide_approval` (lock + 409 `APPROVAL_NOT_PENDING` + outbox `tickets.approval_decided`); **`staff_api.py`** `GET /api/staff/tickets/`, `POST /{id}/decision` with `core/staff.py` (`X-Staff-Key`, env `STAFF_API_KEY`); worker `ROUTES` (created + approval_decided, per-topic DLQ), `_run()` saves answer OR approval request, `Command(resume=...)`; stream pauses at `approval_required` only while undecided; output guard allows refund claims after `refund_status: done`; Postman *Staff approvals* folder (`staffApiKey` secret, empty in git); tests: `lesson13_approval.py` 4/4, E2E Kafka approve→refunded, 409, 401, eval 16/16 | L21 ⭐ |
 | 12B | Output guard rewrite | `guard_output`: bad draft → `RemoveMessage` + `guard_feedback` (`feedback_for`) → back to agent once (`MAX_OUTPUT_RETRIES=1`), then same-id fallback; SSE `reset`; `guard_usage` (classifier via `include_raw=True` + rejected drafts) in API `llm_calls`/`tokens`; `output_retries` in chat JSON; payment-link case now rewrites instead of fallback | L20 |
@@ -153,6 +154,7 @@ opspilot/
 - ✅ **Event-driven tickets** (Lesson 11A): outbox pattern, Kafka relay, agent worker, Redis idempotency, DLQ. `apps/tickets` auth `apps.chat.auth.CustomerHeaders` import karta hai (JWT lesson mein shared auth banegi).
 - ✅ Guardrails (Lesson 12): doosre customer / prompt injection / off-topic → fixed refusal (no tools); ghadhe hue links/emails/ORD aur "payment link" jaise jumle → safe fallback; zabaan code tay karta hai; totals DB `SUM()` se.
 - ✅ 12B: output guard pehle ek dafa dobara likhwata hai (feedback ke saath), phir fallback; API `tokens` mein guards ka kharcha shamil.
+- ✅ 15: RAG — knowledge specialist answers policy questions from each tenant's own documents with citations (hybrid search). New Groq key (28 Oct) — evals re-run and passing; Kafka refund E2E on the `subgraphs=True` code passed (user, Postman). Lesson 15 eval is slow (~25s/question: 5–6 sequential LLM calls + TPM throttling) → candidate Lesson 16: latency/cost (small guard model, merge guard+supervisor, skip grade when confident, k=3, Redis answer cache). **After a PC restart: Docker Desktop + runserver/relay/worker must be started again** (start-infra).
 - ✅ 14: multi-agent — supervisor routes to billing / account / knowledge subgraphs (parallel with `Send`), compose merges; refund interrupt works inside the billing subgraph.
 - ✅ 13: refund sirf staff approval se (`interrupt` → `waiting_approval` → staff API → Kafka `tickets.approval_decided` → `Command(resume)`); chat mein refund tool nahi.
 - ⚠️ Grounding sirf email/link/ORD dekhti hai. Latency +1 LLM call (eval avg 7–10s, Groq free-tier throttle) → `LLM_GUARD_MODEL` chhota model. Staff auth arzi (`X-Staff-Key`) — JWT roles lesson mein. Staff ko naye approval ki notification nahi jati (abhi list poll karna padta hai) — aage `tickets.approval_requested` event. **Code badlo to SAARE workers restart karo** (purane worker ne consumer group mein ticket chura liya tha).
@@ -160,7 +162,7 @@ opspilot/
 - ✅ 27 Oct 2026: saare bahar wale naam database se milaye — headers `X-Tenant-Public-Id` / `X-Customer-Public-Id`, event fields `tenant_public_id` / `ticket_public_id` (purane `X-Tenant-ID` ab 401). Purane outbox rows / DLQ message purani shakal mein hain — replay karoge to "bad payload" DLQ.
 - ⚠️ Agent jo nahi jaanta (office hours, policies) uske liye RAG chahiye — abhi wo "support team se rabta karein" kehta hai.
 - ❌ Abhi tak nahi: Redis checkpointer, Kafka producer/consumer code, Redis code, tests folder, ruff/mypy, CI.
-- Git: pushed — `7a92e22` (Lessons 1–5), `69ee763` (MEMORY.md + CLAUDE.md), `3926d6d` (Lesson 6), `3440413` (Lesson 7), `c134dd1` (Lessons 8–9; message mein galti se quotes + `-m` aa gaye — pushed hai, isliye chhor diya, force push nahi), `fb17ed1` (Lesson 10, saaf message ✅), `17d9619` (Lesson 11A + naming fix + cheatsheet/walkthroughs), `0c76234` (Lesson 11B + Streams + roadmap decision), `fe17e6f` (Lesson 12 guardrails), `f48b044` (12B + 13 approvals). **Uncommitted:** Lesson 14. User **SourceTree** se khud commit/push karta hai — commit message SourceTree ke liye do: pehli line title, khali line, phir tafseel (bina quotes/`-m`).
+- Git: pushed — `7a92e22` (Lessons 1–5), `69ee763` (MEMORY.md + CLAUDE.md), `3926d6d` (Lesson 6), `3440413` (Lesson 7), `c134dd1` (Lessons 8–9; message mein galti se quotes + `-m` aa gaye — pushed hai, isliye chhor diya, force push nahi), `fb17ed1` (Lesson 10, saaf message ✅), `17d9619` (Lesson 11A + naming fix + cheatsheet/walkthroughs), `0c76234` (Lesson 11B + Streams + roadmap decision), `fe17e6f` (Lesson 12 guardrails), `f48b044` (12B + 13 approvals), `560086f` (Lesson 14 multi-agent). **Uncommitted:** Lesson 15. User **SourceTree** se khud commit/push karta hai — commit message SourceTree ke liye do: pehli line title, khali line, phir tafseel (bina quotes/`-m`).
 - `playground/` = seekhne ki files (git mein, magar project ka hissa nahi); asal code `src/` mein.
 
 ## 8. Next steps (roadmap)
@@ -178,7 +180,9 @@ opspilot/
 | ~~12B~~ | ✅ Output guard retry with feedback + guard usage — ho gaya (27 Oct 2026) |
 | ~~13~~ | ✅ Human approval (`interrupt`) — refund sirf staff ki haan par, Kafka resume — ho gaya (27 Oct 2026) |
 | ~~14~~ | ✅ Supervisor + subgraphs (billing / account / knowledge) — ho gaya (27 Oct 2026) |
-| **15** | **RAG (pgvector)**: knowledge specialist ko asli policies/FAQ — embeddings, chunking, retriever tool, citations, eval |
+| ~~15~~ | ✅ RAG (pgvector, hybrid search, agentic RAG) — ho gaya (28 Oct 2026) |
+| 15B (optional) | Document upload API + Kafka `documents.uploaded` → ingestion worker (event-driven indexing); grounding check for numbers in RAG answers |
+| **16** | Agar baqi: JWT auth + roles (staff key hatao), tests folder (pytest), CI, LangSmith tracing/evals |
 | — | Orders REST API |
 | 10+ | Kafka outbox + consumer, interrupt approvals, subgraphs/Send/Command (supervisor), RAG (pgvector), Text-to-SQL, evals (LangSmith), JWT auth, tests, CI |
 | Later | **Extract AI service (Kafka contracts)**: `agents/` + `workers/` alag deployable service; tools ORM ki jagah backend API (service JWT); `tickets.answered` backend consume kare (eventual consistency); shared/versioned event schemas. Hypernim-style service-to-service Kafka seekhna |
