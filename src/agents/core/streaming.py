@@ -25,9 +25,9 @@ def agent_events(stream: Iterable) -> Iterator[tuple[str, dict]]:
             for node, update in data.items():
                 if node == "__interrupt__":
                     continue  # a tuple of Interrupt objects, not a dict; the caller reads it from graph.get_state()
-                if node == "guard_input" and (update or {}).get("blocked_reason"):
+                if node in ("guard_input", "triage") and (update or {}).get("blocked_reason"):
                     yield "guardrail", {"blocked_reason": update["blocked_reason"]}
-                if node == "supervisor" and (update or {}).get("routes"):
+                if node in ("supervisor", "triage") and (update or {}).get("routes"):
                     multi_domain = len(update["routes"]) > 1
                     yield "routing", {"domains": update["routes"]}
                 for msg in (update or {}).get("messages", []):

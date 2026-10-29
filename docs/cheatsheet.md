@@ -107,19 +107,23 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `uv run python playground/lesson15_retrieval.py` | Vector vs hybrid nateeje + tenant `assert` (bina LLM) | playground |
 | `uv run python playground/lesson15_eval.py` | 19 jaal wale sawal, PASS/FAIL | playground |
 
-### 1F. Observability — Langfuse self-hosted (Lesson 16)
+### 1F. Observability + optimization — LangSmith (Lesson 16)
 
 | Code / command | Kya karta hai | Kahan |
 |---|---|---|
-| `docker compose --profile observability up -d` | Langfuse + ClickHouse + SeaweedFS chalao (UI `localhost:3100`) | `docker-compose.yml` |
-| `LANGFUSE_ENABLED=true` (`.env`) + runserver/worker **restart** | Tracing on (autoreload `.env` nahi dekhta) | `.env` |
-| `config = trace_config(config, session_id=, user_id=, tenant=, channel=, tags=)` | Callback + labels jodo; off ho to config waisi hi | `infra/observability/tracing.py` |
-| `metadata["langfuse_session_id" / "langfuse_user_id" / "langfuse_tags"]` | Langfuse callback ye keys padhta hai | tracing.py |
-| `Langfuse(..., mask=mask)` + `model_dump()` | PII trace bhejne se **pehle** chhupao (messages pydantic objects hain) | tracing.py |
-| `flush()` | Chhoti scripts exit se pehle traces bhejein | tracing.py |
-| `dataset.run_experiment(name=, run_name=, task=, evaluators=[...])` + `Evaluation(name=, value=)` | Har run ek experiment; UI mein side by side | `playground/lesson16_bench.py` |
+| `LANGSMITH_TRACING=true` + `LANGSMITH_API_KEY` (`.env`) + runserver/worker **restart** | Tracing on (autoreload `.env` nahi dekhta) | `.env` |
+| `config = trace_config(config, session_id=, user_id=, tenant=, channel=, tags=)` | `LangChainTracer` + run name + tags + metadata; off ho to config waisi hi | `infra/observability/tracing.py` |
+| `metadata["session_id"]` | LangSmith **Threads**: ek conversation / ticket ke saare runs | tracing.py |
+| `Client(hide_inputs=mask, hide_outputs=mask)` + `model_dump()` | PII trace bhejne se **pehle** chhupao (messages pydantic objects hain) | tracing.py |
+| `wait_for_all_tracers()` (`flush()`) | Chhoti scripts exit se pehle traces bhejein | tracing.py |
+| `client.evaluate(target, data="opspilot-bench", evaluators=[metrics], experiment_prefix=, metadata=)` | Har bench run ek experiment; andar LangChain khud trace karta hai | `playground/lesson16_bench.py` |
+| `{"results": [{"key": "seconds", "score": 2.9}, ...]}` | Ek evaluator se kai numeric scores | lesson16_bench.py |
+| `client.runs.query()` / `client.runs.get_url()` | Runs padhne ka naya API (`list_runs` 2027 mein hatega) | — |
+| `ORCHESTRATOR_TRIAGE`, `RAG_SEARCH_LIMIT`, `RAG_SKIP_CONFIDENT_GRADE` | 16B switches: har optimization on/off karke experiment | `config/env.py` |
+| `triage` node: regex → ek structured call (`decision` + `language` + `domains`) | Guard + supervisor ki do calls ki jagah ek | `agents/orchestrator/triage.py` |
+| `@tool(response_format="content_and_artifact")` → `ToolMessage.artifact` | Code ke liye data jo LLM ko nazar nahi aata (`confident`) | `agents/domains/knowledge/tools.py` |
 | `uv run python playground/lesson16_bench.py --run <name> --pause 60` | 8 sawal: waqt, TTFT, calls, tokens per node | playground |
-| Groq headers `x-ratelimit-limit-tokens` / `-requests` | Free tier: 8000 tokens/min, 1000 requests/day | — |
+| Groq headers `x-ratelimit-limit-tokens` / `-requests` | Free tier: 8000 tokens/min, 200k tokens/day, 1000 requests/day | — |
 
 ---
 

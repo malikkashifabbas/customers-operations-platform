@@ -1,76 +1,67 @@
-# Observability — LLM traces with self-hosted Langfuse
+# Observability — tracing and experiments with LangSmith
 
-Every agent run (chat, ticket worker, evals, benchmarks) can be traced: each graph node, LLM call, tool call,
-its time, tokens and model. Everything runs **on your machine**; no account, no data leaves it.
+Every agent run (chat, ticket worker, benchmarks, evals) can be traced in **LangSmith**: each graph node, LLM call and
+tool call with its latency, tokens, model, inputs and outputs. Benchmarks become **experiments** that can be compared
+side by side.
 
-## 1. Start it (once per machine restart)
+## 1. Switch it on
 
-```bash
-docker compose --profile observability up -d
+Create a key at **https://smith.langchain.com → Settings → API Keys**, then in `.env`:
 ```
-
-Without `--profile observability`, `docker compose up -d` starts only Postgres, Redis and Kafka as before.
-First start downloads ~1.5 GB of images and needs ~3 GB RAM.
-
-| Container | Why it exists |
-|---|---|
-| `langfuse-web` | UI + API on **http://localhost:3100** |
-| `langfuse-worker` | Writes incoming traces into ClickHouse in the background |
-| `clickhouse` | Column database for traces (fast "p95 of the last 7 days" queries) |
-| `seaweedfs` | S3-compatible storage for raw trace events (MinIO no longer ships Docker images) |
-| `langfuse-db-init`, `langfuse-bucket-init` | One-shot jobs: create the `langfuse` database in our Postgres and the S3 bucket |
-
-Langfuse also reuses our Postgres (database `langfuse`) and Redis (db `1`).
-
-## 2. Log in
-
-**http://localhost:3100** — `dev@opspilot.example` / `opspilot-local-dev` (local defaults from `docker-compose.yml`).
-Organisation **OpsPilot**, project **opspilot-dev** and its API keys already exist (headless init), so nobody signs up.
-
-## 3. Switch tracing on in the app
-
-In `.env`:
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_...
+LANGSMITH_PROJECT=opspilot-dev
 ```
-LANGFUSE_ENABLED=true
-LANGFUSE_HOST=http://localhost:3100
-```
-Restart runserver and the agent worker (they read `.env` only at start). `LANGFUSE_ENABLED=false` (the default)
-turns tracing off completely; the app works the same without Langfuse running.
+Restart runserver and the agent worker (they read `.env` only at start; Django's autoreload does not watch `.env`).
+`LANGSMITH_TRACING=false` (the default) switches tracing off completely; nothing is sent.
 
-## 4. Find things in the UI
+## 2. What you see in LangSmith
 
 | I want to… | Where |
 |---|---|
-| See one customer message step by step | **Tracing → Traces** → open a trace → the tree shows `guard_input → supervisor → billing/knowledge → …` with time per node |
-| Find the slow step | In a trace, sort/scan the **latency** column of the observations; LLM calls show model and tokens |
-| See a whole conversation or ticket | **Sessions** — chat: session = `conversation_id`; ticket: `ticket-<public_id>` (first run + resume after approval) |
-| Only one company / channel | Filter **Tags**: `tenant:demo-company`, `channel:chat`, `channel:ticket`, `resume` |
-| Compare benchmark runs | **Datasets → opspilot-bench → Runs** — each `lesson16_bench.py --run <name>` is one run with scores `seconds`, `ttft`, `llm_calls`, `tokens` |
+| One customer message, step by step | **Projects → opspilot-dev** → a run named `support-chat` / `support-ticket` → the tree: `triage → billing/knowledge → agent → tools → compose → guard_output` |
+| The slow step | Inside a trace, the latency of every child run; LLM runs show model, prompt/completion tokens |
+| A whole conversation or ticket | **Threads** (grouped by `session_id`): chat = `conversation_id`, ticket = `ticket-<public_id>` (first run + resume after approval) |
+| Only one company / channel | Filter by tag `tenant:demo-company`, `channel:chat`, `channel:ticket`, `resume` |
+| p50/p99 latency, tokens, error rate over time | **Monitor** tab of the project |
+| Compare optimizations | **Datasets → opspilot-bench → Experiments** — select two and compare `seconds`, `ttft`, `llm_calls`, `tokens` per question |
+| Cost in $ | Tokens are counted automatically; add the Groq model prices once under the workspace's model pricing settings |
 
-## 5. Benchmarks
+## 3. Benchmarks = experiments
 
 ```bash
-uv run python playground/lesson16_bench.py --run baseline
+uv run python playground/lesson16_bench.py --run optimized --pause 60
 ```
-8 fixed questions (guard refuse, billing, account, multi-domain, 4× RAG). Prints a table (total time, time to first
-token, LLM calls, tokens, calls/tokens per node) and records a Langfuse experiment.
+8 fixed questions (guard refuse, billing, account, multi-domain, 4× RAG) on the LangSmith dataset `opspilot-bench`.
+Every run stores its switches (triage on/off, chunks, grade skip, models) as experiment metadata, so a comparison
+always shows what was different. Switches come from `.env` or env vars:
 
-**Rate limits distort latency.** A free Groq tier allows ~8000 tokens/minute; the 8 questions use ~27k tokens, so
-without a pause most of the measured time is the SDK waiting on `retry-after`. For real latency numbers use
-`--pause 60` (each question starts with a full token bucket). Token counts are not affected either way. Change one thing, run again with a
-new `--run` name, compare in the UI. Always re-run the evals too (`lesson15_eval.py`, `lesson14_eval.py`,
+| Switch | Default | What it does |
+|---|---|---|
+| `ORCHESTRATOR_TRIAGE` | `true` | One triage LLM call instead of input guard + supervisor |
+| `RAG_SEARCH_LIMIT` | `3` | Policy chunks per search |
+| `RAG_SKIP_CONFIDENT_GRADE` | `true` | Skip the LLM grade when vector and keyword search agree on the top chunk |
+| `LLM_GUARD_MODEL` | (main model) | Model for triage / grade |
+
+**Rate limits distort latency.** A free Groq tier allows ~8000 tokens/minute; use `--pause 60` for real latency.
+Token counts are not affected. Always re-run the evals after a change (`lesson15_eval.py`, `lesson14_eval.py`,
 `lesson12_eval.py`): a faster answer that is wrong is not an improvement.
 
-## 6. Personal data
+## 4. Personal data
 
-`infra/observability/tracing.py` masks phone numbers, emails and CNICs **before** a trace leaves the process
-(`my phone is [phone]`). Our data is fake, but this is the habit for real data. Tags and sessions use public ids and
-tenant slugs, never names.
+`infra/observability/tracing.py` passes a masking function to LangSmith's `hide_inputs` / `hide_outputs`: phone numbers,
+emails and CNICs become `[phone]`, `[email]`, `[cnic]` **before** a trace leaves the process. Our data is fake, so
+`LANGSMITH_MASK_PII=false` would be acceptable here, but masking stays on as the habit for real data. Tags and metadata
+use public ids and tenant slugs, never names. For data that must never leave the company, LangSmith also exists as a
+self-hosted (enterprise) deployment; the code only needs a different `LANGSMITH_ENDPOINT`.
 
-## 7. How it is wired (for code reviews)
+## 5. How it is wired (for code reviews)
 
-- Only `infra/observability/tracing.py` knows Langfuse: `trace_config()` adds the Langfuse callback + labels to the
-  LangGraph config, `flush()` sends buffered traces from short scripts.
+- Only `infra/observability/tracing.py` knows LangSmith: `trace_config()` adds a `LangChainTracer` (our own `Client`
+  with masking), a run name, tags and metadata to the LangGraph config; `flush()` waits for pending traces in scripts;
+  `langsmith_client()` is used for datasets and experiments.
 - Called from `apps/chat/services.py` (`_prepare`) and `workers/handlers/tickets.py` (`_run`).
-- The Langfuse SDK v3 is built on **OpenTelemetry**, so the same spans could go to Grafana Tempo or any OTel backend.
-- Gotcha: pydantic-settings reads `.env` into `Env`, not into `os.environ`; the client therefore gets its keys passed in.
+- Inside `client.evaluate()` LangChain traces by itself (nested under the experiment row), so the benchmark adds no tracer.
+- Gotchas: pydantic-settings reads `.env` into `Env`, not into `os.environ` (the client gets its key passed in, and the key
+  is also exported for runs started by `evaluate()`); `client.list_runs()` / `get_run_url()` are deprecated in favour of
+  `client.runs.query()` / `client.runs.get_url()`.

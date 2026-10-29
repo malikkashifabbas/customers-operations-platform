@@ -1,4 +1,4 @@
-"""Multi-agent support graph: input guard -> supervisor -> domain specialists in parallel (Send) -> compose -> output guard.
+"""Multi-agent support graph: triage (or input guard -> supervisor) -> domain specialists in parallel (Send) -> compose -> output guard.
 
 Guards, refusal and the output-guard rewrite rules are reused from agents/domains/support/graph.py.
 """
@@ -18,9 +18,11 @@ from agents.domains.support.context import SupportContext
 from agents.domains.support.guards import REPLY_LANGUAGE
 from agents.domains.support.state import GuardUsage, SupportState
 from agents.registry import DOMAINS
+from config.env import env
 from infra.llm.gateway import get_chat_model
 
 from .supervisor import supervisor
+from .triage import triage
 
 COMPOSE_PROMPT = Path(__file__).parent / "prompts" / "compose.v1.md"
 NO_USAGE: GuardUsage = {"llm_calls": 0, "tokens": 0}
@@ -93,20 +95,31 @@ def route_after_output(state: OrchestratorState) -> str:
     return "compose" if state.get("guard_feedback") else END
 
 
-def build_graph(checkpointer=None):
+def route_after_triage(state: OrchestratorState):
+    return "refuse" if state.get("blocked_reason") else route_to_domains(state)
+
+
+def build_graph(checkpointer=None, *, use_triage: bool | None = None):
+    """use_triage (default: ORCHESTRATOR_TRIAGE in .env) swaps guard_input + supervisor for one triage call."""
+    use_triage = env.orchestrator_triage if use_triage is None else use_triage
     builder = StateGraph(OrchestratorState, context_schema=SupportContext)
-    builder.add_node("guard_input", guard_input)
     builder.add_node("refuse", support.refuse)
-    builder.add_node("supervisor", supervisor)
     for name, spec in DOMAINS.items():
         builder.add_node(name, specialist(spec), input_schema=DomainState)
         builder.add_edge(name, "compose")
     builder.add_node("compose", compose)
     builder.add_node("guard_output", support.guard_output)
 
-    builder.add_edge(START, "guard_input")
-    builder.add_conditional_edges("guard_input", support.route_after_input, {"agent": "supervisor", "refuse": "refuse"})
-    builder.add_conditional_edges("supervisor", route_to_domains, list(DOMAINS))
+    if use_triage:
+        builder.add_node("triage", triage)
+        builder.add_edge(START, "triage")
+        builder.add_conditional_edges("triage", route_after_triage, ["refuse", *DOMAINS])
+    else:
+        builder.add_node("guard_input", guard_input)
+        builder.add_node("supervisor", supervisor)
+        builder.add_edge(START, "guard_input")
+        builder.add_conditional_edges("guard_input", support.route_after_input, {"agent": "supervisor", "refuse": "refuse"})
+        builder.add_conditional_edges("supervisor", route_to_domains, list(DOMAINS))
     builder.add_edge("compose", "guard_output")
     builder.add_conditional_edges("guard_output", route_after_output, {"compose": "compose", END: END})
     builder.add_edge("refuse", END)

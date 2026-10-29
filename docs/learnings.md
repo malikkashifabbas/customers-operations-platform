@@ -1310,3 +1310,53 @@ Agar hum bina naape "model slow hai" samajh kar optimize karte, to **ghalat chee
 | generate_query_or_respond | 4 | 1,646 | |
 
 **TTFT ≈ kul waqt** ka matlab: jawab likhna tez hai (Groq), saara waqt jawab **shuru hone se pehle** ke qadmon (guard, supervisor, tools, grade) mein jata hai. Agle qadam (16B) data ke mutabiq: guard + supervisor ek call (−33% tokens), grade sirf zaroorat par, chunks 5 → 3, chhota model classification ke liye, aur cache.
+
+## Learning 26 ⭐: LangSmith (cloud) + optimizations, naap kar (16B)
+
+**Date:** 29 Oct 2026 · **Files:** `src/infra/observability/tracing.py` (ab LangSmith), `config/env.py` (LangSmith + 16B switches), `agents/orchestrator/triage.py` + `prompts/triage.v1.md`, `agents/orchestrator/graph.py` (`use_triage`), `agents/core/streaming.py`, `apps/knowledge/selectors.py` (`ranks`), `agents/domains/knowledge/tools.py` (artifact `confident`), `nodes.py` (grade skip), `prompts/query.v1.md` (broad sawal), `playground/lesson16_bench.py` (LangSmith experiments), `docs/observability.md`; Langfuse hata diya (compose, SDK, env)
+
+### Langfuse → LangSmith kyun
+Senior ka faisla: practice project mein data farzi hai, isliye cloud theek hai, aur job mein **LangSmith** hi chahiye. Badalna aasan raha kyunki tracing pehle din se **ek file** mein thi: `trace_config()` aur `flush()` ka API wahi raha, aur chat aur worker ka code chhua hi nahi gaya.
+
+| LangSmith mein | Kaise |
+|---|---|
+| Trace | `LangChainTracer(project_name, client)` callback; run name `support-chat` / `support-ticket` |
+| Filter | Tags `tenant:…`, `channel:…`, `resume` |
+| Conversation / ticket ek jagah | **Threads**: metadata `session_id` (chat = `conversation_id`, ticket = `ticket-<id>`) |
+| Tokens + latency | LangSmith khud ginta hai (smoke: 1,938 tokens, 2.87s, 26 qadam) |
+| PII | `Client(hide_inputs=mask, hide_outputs=mask)`: `[phone]`, `[email]` (smoke test ne check kiya) |
+| Experiments | `client.evaluate(target, data="opspilot-bench", evaluators=[metrics], experiment_prefix=, metadata=switches)` |
+| Gotcha | `evaluate()` ke andar LangChain **khud** trace karta hai, isliye bench apna tracer nahi jodta (warna traces dohre). `list_runs()` deprecated hai, naya API `client.runs.query()` |
+
+### Teen optimizations (har ek ka switch hai, taa ke on/off karke naapa ja sake)
+| Switch | Kya | Kyun |
+|---|---|---|
+| `ORCHESTRATOR_TRIAGE=true` | Guard + supervisor = **ek** structured call (`decision` + `language` + `domains`); regex check pehle jaisa | 16A: dono milkar 33% tokens le rahe the |
+| `RAG_SEARCH_LIMIT=3` | Chunks 5 → 3 | Answer prompt ~40% chhota |
+| `RAG_SKIP_CONFIDENT_GRADE=true` | Dono searches **ek hi chunk ko pehle number** par rakhein to grade LLM skip | RAG mein ek call kam |
+
+### Nateeje (LangSmith experiments, 8 sawal, 60s pause)
+| | `baseline` | `optimized` | Farq |
+|---|---|---|---|
+| Median waqt | 4.19s | **3.27s** | −22% |
+| Median TTFT | 4.05s | **3.06s** | −24% |
+| Kul tokens | 26,650 | **18,382** | **−31%** |
+| Median LLM calls | 5 | **3** | −2 |
+| guard refuse tokens | 506 | 808 | ⚠️ triage ka prompt lamba hai, refuse wala case **mehenga** hua, lekin baqi sab saste |
+
+### Eval ne do kamzoriyan pakdi
+1. **Broad sawal toota:** *"what is your return policy?"* (lesson14) mein 30 din wali window gayab thi. 3 chunks mein "§1 The return window" chauthe number par tha. Hal: query prompt mein rule ke broad sawal par asal hisson ki **alag alag searches** karo (window, exceptions, refund). Dobara chalaya to lesson14 **7/7** ✅.
+2. **"Confident" ka signal dheela tha:** pehle rule tha "chunk dono searches ne dhoonda", jo almost har chunk ke liye sach tha ("return" jaisa lafz har section mein milta hai), yani grade **hamesha** skip ho raha tha. Ab rule: dono searches ka **pehla** nateeja wahi chunk ho. Isse grade zyada chalega, quality ke liye zyada mehfooz.
+
+**Chhota model (`gpt-oss-20b`) reject:** structured output mein ghalat tool naam bulata tha, triage fail-open ho kar "Sara ke orders" wala sawal bhi billing ko chala gaya. Data tools ki wajah se mehfooz raha, lekin guard ka kaam nahi hua. **Sasta model tabhi jab eval pass kare.** Groq par `meta-llama/llama-prompt-guard-2-*` jaise khaas classifiers bhi hain, jo aage aazmaane ke liye achha topic hai.
+
+### Evals (optimized config)
+| Eval | Natija |
+|---|---|
+| lesson15 (19 RAG jaal) | **19/19** (dheele confident rule ke saath); sakht rule ke baad sirf 2 sawal chal paaye (pass), phir Groq ki daily limit |
+| lesson14 | 6/7 → broad fix → **7/7** |
+| lesson12 | **16/16** |
+
+### Baqi (agli key / agle din)
+- lesson15 poora, sakht confident rule + broad-query rule ke saath
+- `lesson16_bench.py --run optimized-v2 --pause 60`, aur LangSmith mein `baseline` / `optimized` / `optimized-v2` compare

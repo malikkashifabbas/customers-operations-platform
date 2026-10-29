@@ -30,11 +30,17 @@ class Env(BaseSettings):
     kafka_bootstrap_servers: str = "localhost:9092"
     redis_url: str = "redis://localhost:6379/0"
 
-    # Self-hosted Langfuse tracing (docker compose --profile observability); off unless LANGFUSE_ENABLED=true.
-    langfuse_enabled: bool = False
-    langfuse_host: str = "http://localhost:3100"
-    langfuse_public_key: str = "pk-lf-opspilot-local"
-    langfuse_secret_key: SecretStr = SecretStr("sk-lf-opspilot-local")
+    # Lesson 16B switches, so each optimization can be measured on/off as its own LangSmith experiment.
+    orchestrator_triage: bool = True  # one triage call instead of guard_input + supervisor
+    rag_search_limit: int = 3  # chunks per policy search (was 5)
+    rag_skip_confident_grade: bool = True  # skip the LLM grade when vector and keyword search agree on the top chunk
+
+    # LangSmith tracing (cloud); off unless LANGSMITH_TRACING=true and a key is set.
+    langsmith_tracing: bool = False
+    langsmith_api_key: SecretStr | None = None
+    langsmith_project: str = "opspilot-dev"
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+    langsmith_mask_pii: bool = True  # phones/emails/CNICs become [phone]/[email]/[cnic] before traces leave the process
 
     # Shared key for the staff approval API until JWT roles exist; unset = staff API refuses everyone.
     staff_api_key: SecretStr | None = None

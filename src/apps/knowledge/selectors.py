@@ -50,9 +50,14 @@ def hybrid_search_chunks(*, tenant: Tenant, query: str, query_embedding: list[fl
     by_words = keyword_search_chunks(tenant=tenant, query=query)
     scores: dict[int, float] = {}
     chunks: dict[int, KnowledgeChunk] = {}
-    for results in (by_meaning, by_words):
+    ranks: dict[int, dict[str, int]] = {}
+    for source, results in (("meaning", by_meaning), ("words", by_words)):
         for rank, chunk in enumerate(results, start=1):
             scores[chunk.id] = scores.get(chunk.id, 0.0) + 1.0 / (RRF_K + rank)
             chunks.setdefault(chunk.id, chunk)
+            ranks.setdefault(chunk.id, {})[source] = rank
     best = sorted(scores, key=scores.get, reverse=True)[:limit]
+    for chunk_id in best:
+        # Rank per search ({"meaning": 1, "words": 3}): callers can tell how sure the search is.
+        chunks[chunk_id].ranks = ranks[chunk_id]
     return [chunks[chunk_id] for chunk_id in best]

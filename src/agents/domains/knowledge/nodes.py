@@ -75,6 +75,9 @@ def generate_query_or_respond(state: KnowledgeState, runtime: Runtime[SupportCon
 def grade_documents(state: KnowledgeState) -> Literal["generate_answer", "rewrite_question"]:
     if state.get("rewrites", 0) >= MAX_REWRITES:
         return "generate_answer"  # already searched twice: answer with what we have (it may say "I don't know")
+    searches = [m for m in _this_turn(state["messages"]) if isinstance(m, ToolMessage)]
+    if env.rag_skip_confident_grade and searches and all((m.artifact or {}).get("confident") for m in searches):
+        return "generate_answer"  # Lesson 16B: both searches agree on the top chunk, so skip the LLM grade call
     llm = get_chat_model(model=env.llm_guard_model).with_structured_output(Grade)
     grade = llm.invoke(
         [

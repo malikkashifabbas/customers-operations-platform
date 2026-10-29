@@ -85,7 +85,7 @@
 opspilot/
 ├── MEMORY.md              ← ye file (project ki yaadasht)
 ├── CLAUDE.md              ← AI ke liye: pehle MEMORY.md parho
-├── docs/learnings.md      ← Learning 1–25 (har lesson ka sabaq)
+├── docs/learnings.md      ← Learning 1–26 (har lesson ka sabaq)
 ├── docs/walkthroughs/     ← zaroori files ki line-by-line wazahat + "senior ke sawal" (5-step template); har nayi walkthrough yahan
 ├── docs/cheatsheet.md     ← sab se zaroori code lines (LangGraph, Kafka, outbox, events, Redis, workers) — naya concept aaye to yahan bhi line jodo
 ├── docker-compose.yml     ← postgres+pgvector, redis, kafka, kafka-ui
@@ -164,7 +164,7 @@ opspilot/
 - ✅ 27 Oct 2026: saare bahar wale naam database se milaye — headers `X-Tenant-Public-Id` / `X-Customer-Public-Id`, event fields `tenant_public_id` / `ticket_public_id` (purane `X-Tenant-ID` ab 401). Purane outbox rows / DLQ message purani shakal mein hain — replay karoge to "bad payload" DLQ.
 - ⚠️ Agent jo nahi jaanta (office hours, policies) uske liye RAG chahiye — abhi wo "support team se rabta karein" kehta hai.
 - ❌ Abhi tak nahi: Redis checkpointer, Kafka producer/consumer code, Redis code, tests folder, ruff/mypy, CI.
-- Git: pushed — `7a92e22` (Lessons 1–5), `69ee763` (MEMORY.md + CLAUDE.md), `3926d6d` (Lesson 6), `3440413` (Lesson 7), `c134dd1` (Lessons 8–9; message mein galti se quotes + `-m` aa gaye — pushed hai, isliye chhor diya, force push nahi), `fb17ed1` (Lesson 10, saaf message ✅), `17d9619` (Lesson 11A + naming fix + cheatsheet/walkthroughs), `0c76234` (Lesson 11B + Streams + roadmap decision), `fe17e6f` (Lesson 12 guardrails), `f48b044` (12B + 13 approvals), `560086f` (Lesson 14 multi-agent), `d76395a` (Lesson 15 RAG), `cdada78` (15C admin). **Uncommitted:** 16A observability. User **SourceTree** se khud commit/push karta hai — commit message SourceTree ke liye do: pehli line title, khali line, phir tafseel (bina quotes/`-m`).
+- Git: pushed — `7a92e22` (Lessons 1–5), `69ee763` (MEMORY.md + CLAUDE.md), `3926d6d` (Lesson 6), `3440413` (Lesson 7), `c134dd1` (Lessons 8–9; message mein galti se quotes + `-m` aa gaye — pushed hai, isliye chhor diya, force push nahi), `fb17ed1` (Lesson 10, saaf message ✅), `17d9619` (Lesson 11A + naming fix + cheatsheet/walkthroughs), `0c76234` (Lesson 11B + Streams + roadmap decision), `fe17e6f` (Lesson 12 guardrails), `f48b044` (12B + 13 approvals), `560086f` (Lesson 14 multi-agent), `d76395a` (Lesson 15 RAG), `cdada78` (15C admin), `0f300b3` (16A Langfuse). **Uncommitted:** 16B (LangSmith + optimizations). User **SourceTree** se khud commit/push karta hai — commit message SourceTree ke liye do: pehli line title, khali line, phir tafseel (bina quotes/`-m`).
 - `playground/` = seekhne ki files (git mein, magar project ka hissa nahi); asal code `src/` mein.
 
 ## 8. Next steps (roadmap)
@@ -185,7 +185,7 @@ opspilot/
 | ~~15~~ | ✅ RAG (pgvector, hybrid search, agentic RAG) — ho gaya (28 Oct 2026) |
 | 15B (optional) | Document upload API + Kafka `documents.uploaded` → ingestion worker (event-driven indexing); grounding check for numbers in RAG answers |
 | ~~16A~~ | ✅ Observability: self-hosted Langfuse + baseline (28 Oct 2026) |
-| **16B** | **Optimizations, data ke mutabiq**: guard+supervisor ek triage call (−33% tokens), grade sirf zaroorat par, chunks 5→3, `LLM_GUARD_MODEL` chhota model, Redis cache (policy answers only) — har ek ke baad bench `--pause 60` + evals; Groq free tier 1000 requests/day |
+| 16B | LangSmith + optimizations | **Langfuse removed** (senior: LangSmith cloud, data is fake) — compose back to pre-16A, `langfuse` SDK removed, `langsmith` explicit dep; `tracing.py` = `LangChainTracer` + own `Client(hide_inputs/outputs=mask)`, run name `support-<channel>`, tags tenant/channel/resume, metadata `session_id` (Threads); env `LANGSMITH_TRACING/API_KEY/PROJECT/ENDPOINT/MASK_PII`. Optimizations with switches `ORCHESTRATOR_TRIAGE` (`orchestrator/triage.py`: regex → one structured call decision+language+domains), `RAG_SEARCH_LIMIT=3`, `RAG_SKIP_CONFIDENT_GRADE` (tool artifact `confident` = top chunk ranked 1st by BOTH searches, `selectors` sets `chunk.ranks`); query prompt: broad policy question → one search per part. Bench = LangSmith experiments on dataset `opspilot-bench` (switches as metadata): baseline median 4.19s / 26,650 tokens → optimized 3.27s / 18,382 (−31%), calls 5→3; gpt-oss-20b as guard model REJECTED (bad tool calls → fail-open). Evals: lesson15 19/19 (loose rule), lesson14 7/7 after broad fix, lesson12 16/16. **Pending:** full lesson15 with strict rule + `--run optimized-v2` (Groq TPD ran out) | L26 ⭐ |
 | 16C | Kafka headers mein OTel trace context: POST /tickets → relay → worker ek trace |
 | 17 | JWT auth + roles (staff key hatao), pytest folder, CI |
 | — | Orders REST API |
