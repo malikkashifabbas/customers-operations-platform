@@ -123,6 +123,8 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `triage` node: regex → ek structured call (`decision` + `language` + `domains`) | Guard + supervisor ki do calls ki jagah ek | `agents/orchestrator/triage.py` |
 | `@tool(response_format="content_and_artifact")` → `ToolMessage.artifact` | Code ke liye data jo LLM ko nazar nahi aata (`confident`) | `agents/domains/knowledge/tools.py` |
 | `uv run python playground/lesson16_bench.py --run <name> --pause 60` | 8 sawal: waqt, TTFT, calls, tokens per node | playground |
+| `with_structured_output(SearchPlan)` → `_search_calls(queries, ...)` | Model form bharta hai, **code** har query ka tool call banata hai; do-hisson wale sawal ka koi hissa nahi chhootta | `agents/domains/knowledge/nodes.py` |
+| `init_chat_model(..., timeout=env.llm_timeout_seconds)` | ChatGroq ka default timeout **None** hai: bina iske stalled call hamesha atki rehti hai | `infra/llm/gateway.py` |
 | Groq headers `x-ratelimit-limit-tokens` / `-requests` | Free tier: 8000 tokens/min, 200k tokens/day, 1000 requests/day | — |
 
 ---

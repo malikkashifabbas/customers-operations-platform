@@ -1357,6 +1357,25 @@ Senior ka faisla: practice project mein data farzi hai, isliye cloud theek hai, 
 | lesson14 | 6/7 → broad fix → **7/7** |
 | lesson12 | **16/16** |
 
-### Baqi (agli key / agle din)
-- lesson15 poora, sakht confident rule + broad-query rule ke saath
-- `lesson16_bench.py --run optimized-v2 --pause 60`, aur LangSmith mein `baseline` / `optimized` / `optimized-v2` compare
+### Aakhri re-check (1 Nov 2026, sakht confident rule + broad-query rule)
+| | `baseline` | `optimized` (dheela rule) | **`optimized-v2` (final code)** |
+|---|---|---|---|
+| Median waqt | 4.19s | 3.27s | **3.70s** (−12%) |
+| Median TTFT | 4.05s | 3.06s | **3.63s** (−10%) |
+| Kul tokens | 26,650 | 18,382 | **19,179** (−28%) |
+| Median LLM calls | 5 | 3 | **3** |
+| Grade LLM calls (4 RAG sawal) | 4 | 0 | **1** |
+
+**Asli numbers `optimized-v2` ke hain:** −31% aur 3.27s dheele rule ke the. Har run mein sawal ek ek dafa chalta hai aur `rag table` jaise outliers (8–10s) aate hain, isliye waqt ke chhote farq pakke nahi; tokens ka farq pakka hai.
+
+**lesson15: 18/19.** Fail: *"express delivery cost and by what time must I order?"*. Query writer ne is dafa sirf `express delivery cost` likha; 2 pm wala §2 us query mein 4th number par hai aur limit 3 hai. Pichle run ki query `express delivery cost order deadline` mein wo 3rd par tha aur pass hua. Yani ye **kabhi kabhi hone wali** ghalti hai: ek eval run pass hona guarantee nahi.
+
+**Fix, do koshishon mein:**
+1. Sirf prompt mein rule ("har cheez ki alag search") → **0/5**. Model `bind_tools` ke saath ek hi search likhta raha.
+2. `SearchPlan(queries: list[str])` structured form, aur **code** har query ka tool call banata hai (max 4; plan fail ho to customer ke apne alfaaz se search) → express **5/5** + eval mein pass, COD limit + fee **3/3**. Phir wahi sabaq: prompt darkhwast hai, guarantee code aur schema dete hain. Prompt ki misal jaan boojh kar eval ka sawal nahi rakhi, warna test kuch sabit nahi karta.
+
+**Is ke baad evals:** lesson15 **18/19**, lesson14 **7/7**. Naya fail: *"Can you deliver my order to Dubai?"*: "Dubai" documents mein hai hi nahi, aur `delivery to Dubai` query par §1 *Where we deliver* top 5 mein bhi nahi aata, isliye chunk limit se hal nahi hoga. Ye kamzori pehle se thi (pehle query ke lafz kabhi `international shipping destinations` ke qareeb aa jate the). **Abhi khula hai.** `optimized-v2` ke numbers is fix se pehle ke hain; dobara nahi naape.
+
+**Slowness ka sabaq:** bhare token bucket par ek sawal 7.4s (4 calls, 4,136 tokens, koi 429 nahi). Peeche peeche chalane par 8,000 tokens/minute ka bucket khali ho gaya (`remaining-tokens=518`) aur har koshish minuton mein poori hui. Is liye repeat tests mein pause zaroori hai.
+
+**Timeout bug pakda:** lesson15 ka ek run 11 minute se zyada ek sawal par atka raha (ek HTTPS connection khuli, koi output nahi). `ChatGroq` khud timeout nahi lagata (`groq client timeout: None`), yani stalled call hamesha atki reh sakti hai. Fix: `LLM_TIMEOUT_SECONDS=60` gateway mein. Fix ke baad us run mein koi atkao nahi aaya; hang ki wajah 100% sabit nahi hui, kyunki atki call ka stack nahi dekha ja saka.

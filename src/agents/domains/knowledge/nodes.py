@@ -1,5 +1,6 @@
 """Agentic RAG steps: write a search query -> (retrieve) -> grade the results -> answer, or rewrite the query once and search again."""
 
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -22,10 +23,16 @@ from .tools import search_policies
 PROMPTS = Path(__file__).parent / "prompts"
 MAX_REWRITES = 1
 TRANSCRIPT_MESSAGES = 4
+MAX_QUERIES = 4
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeState(DomainState):
     rewrites: int
+
+
+class SearchPlan(BaseModel):
+    queries: list[str] = Field(description="One short English keyword query for EACH thing the customer asks. Never merge or drop a part.")
 
 
 class Grade(BaseModel):
@@ -54,22 +61,32 @@ def _transcript(messages: list[BaseMessage]) -> str:
     return "\n".join(lines[-TRANSCRIPT_MESSAGES:])
 
 
-def _search_call(query: str, prefix: str) -> AIMessage:
-    """A ready-made search tool call: it goes straight to the retrieve node and adds no customer-visible text."""
-    call = {"name": search_policies.name, "args": {"query": query}, "id": f"{prefix}_{uuid.uuid4().hex[:12]}", "type": "tool_call"}
-    return AIMessage(content="", tool_calls=[call])
+def _search_calls(queries: list[str], prefix: str) -> AIMessage:
+    """Ready-made search tool calls: they go straight to the retrieve node and add no customer-visible text."""
+    calls = [
+        {"name": search_policies.name, "args": {"query": query}, "id": f"{prefix}_{uuid.uuid4().hex[:12]}", "type": "tool_call"}
+        for query in queries
+    ]
+    return AIMessage(content="", tool_calls=calls)
 
 
 def generate_query_or_respond(state: KnowledgeState, runtime: Runtime[SupportContext]) -> dict:
-    prompt = load_prompt(PROMPTS / "query.v1.md", company_name=runtime.context.tenant.name)
-    llm = get_chat_model().bind_tools([search_policies])
+    prompt = load_prompt(PROMPTS / "query.v2.md", company_name=runtime.context.tenant.name)
+    # A form, not bind_tools: given the tool, the model asked one thing of a two-part question (0/5 on the express test).
+    llm = get_chat_model().with_structured_output(SearchPlan, include_raw=True)
     # Only a short transcript, not the full history: earlier turns hold other specialists' tool calls.
     request = f"Conversation so far:\n{_transcript(state['messages'][:-1]) or '(none)'}\n\nLatest customer message: {_question(state)}"
-    response = llm.invoke([SystemMessage(prompt), HumanMessage(request)])
-    if not response.tool_calls:
-        # Code, not tool_choice="required", guarantees the search: that API flag errors out when the model ignores it.
-        response = _search_call(_question(state), prefix="fallback")
-    return {"messages": [response]}
+    try:
+        result = llm.invoke([SystemMessage(prompt), HumanMessage(request)])
+    except Exception:
+        # A policy answer must come from the documents, so a failed plan still searches with the customer's own words.
+        logger.warning("search plan failed, searching with the raw question", exc_info=True)
+        return {"messages": [_search_calls([_question(state)], prefix="fallback")]}
+    plan = result["parsed"]
+    queries = [query.strip() for query in (plan.queries if plan else []) if query.strip()][:MAX_QUERIES]
+    message = _search_calls(queries or [_question(state)], prefix="search")
+    message.usage_metadata = result["raw"].usage_metadata
+    return {"messages": [message]}
 
 
 def grade_documents(state: KnowledgeState) -> Literal["generate_answer", "rewrite_question"]:
@@ -93,7 +110,7 @@ def rewrite_question(state: KnowledgeState) -> dict:
     query = llm.invoke(
         [SystemMessage(load_prompt(PROMPTS / "rewrite.v1.md")), HumanMessage(f"Customer question: {_question(state)}")]
     ).content.strip().strip('"')
-    return {"messages": [_search_call(query, prefix="rewrite")], "rewrites": state.get("rewrites", 0) + 1}
+    return {"messages": [_search_calls([query], prefix="rewrite")], "rewrites": state.get("rewrites", 0) + 1}
 
 
 def generate_answer(state: KnowledgeState, runtime: Runtime[SupportContext]) -> dict:
