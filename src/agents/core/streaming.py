@@ -37,6 +37,8 @@ def agent_events(stream: Iterable) -> Iterator[tuple[str, dict]]:
                         yield "reset", {}  # draft rejected: client clears the bubble, the rewrite's tokens follow
                     elif node == "guard_output":
                         yield "replace", {"text": msg.content}  # tokens already shown were unsafe: client swaps them
+                    elif isinstance(msg, AIMessage) and msg.response_metadata.get("joined"):
+                        yield "token", {"text": msg.content}  # specialist answers joined by code: no LLM, so no tokens were streamed
                     elif isinstance(msg, AIMessage) and msg.response_metadata.get("domain") and not msg.usage_metadata:
                         if not multi_domain:
                             yield "token", {"text": msg.content}  # a specialist's fixed text (no LLM, so no tokens were streamed)

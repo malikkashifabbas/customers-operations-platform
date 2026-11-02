@@ -16,9 +16,9 @@ Effective: 1 October 2026 · Version 5
 
 The chat assistant is available 24 hours a day, but staff decisions (refund approvals, profile changes) only happen during support hours.
 
-## 2. How to reach us
+## 2. How to reach us and open a support ticket
 
-- **Support tickets** (recommended): open a ticket from your account. Staff reply within **24 business hours**.
+- **Support tickets** (recommended): to open, raise or create a ticket, write a subject and a description of your issue from your account. Staff reply within **24 business hours**.
 - **Email:** support@demo-company.example — replies within 2 business days.
 - **Phone:** +92-21-0000-1234, during support hours only.
 

@@ -25,7 +25,7 @@ from infra.llm.gateway import get_chat_model
 from .supervisor import supervisor
 from .triage import triage
 
-COMPOSE_PROMPT = Path(__file__).parent / "prompts" / "compose.v1.md"
+COMPOSE_PROMPT = Path(__file__).parent / "prompts" / "compose.v2.md"
 NO_USAGE: GuardUsage = {"llm_calls": 0, "tokens": 0}
 
 
@@ -90,6 +90,11 @@ def compose(state: OrchestratorState, runtime: Runtime[SupportContext]) -> dict:
     rewriting = bool(state.get("guard_feedback"))
     if len(drafts) == 1 and not rewriting:
         return {}  # one specialist answered: its reply is already the final reply, no extra LLM call
+    if len(drafts) > 1 and not rewriting:
+        # Joined by code: an LLM here turned "I don't have that information" into invented help-center steps.
+        joined = AIMessage("\n\n".join(str(m.content) for m in drafts), response_metadata={"joined": True})
+        usage = _add_usage(state.get("routing_usage") or NO_USAGE, drafts)
+        return {"messages": [*[RemoveMessage(id=m.id) for m in drafts], joined], "routing_usage": usage}
 
     question = str(turn[0].content)
     facts = "\n".join(f"- {m.name}: {m.content}" for m in turn if isinstance(m, ToolMessage))
