@@ -141,6 +141,8 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `session_id = ticket-<public_id>` | Trace = ek silsila; Thread = ek ticket ke saare silsile | `staff_api.py` |
 | `best.append(by_meaning[0].id)` | Meaning ka rank 1 hamesha result mein, limit ke upar ek jagah | `apps/knowledge/selectors.py` |
 | `trim_messages(earlier, max_tokens=, token_counter=count_tokens_approximately, strategy="last", start_on="human")` | Sirf nayi history LLM ko, warna lambi chat par 413 | `agents/orchestrator/graph.py` |
+| `AIMessage("\n\n".join(drafts), response_metadata={"joined": True})` | Do jawab code jodta hai: LLM nahi, to kuch ghada nahi ja sakta; streaming ise ek token mein bhejti hai | `orchestrator/graph.py`, `core/streaming.py` |
+| `Topics to answer` | Answer step sirf plan ki queries ka jawab de, doosre specialist ka hissa na chhede | `domains/knowledge/nodes.py` |
 | `FILLER_WORDS` (`policy`, `policies`) | Query se wo lafz hatao jo har document mein hai | `agents/domains/knowledge/tools.py` |
 
 ---

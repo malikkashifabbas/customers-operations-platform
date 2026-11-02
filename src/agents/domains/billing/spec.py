@@ -10,7 +10,7 @@ from agents.domains.support.graph import REFUND_RULE, _capabilities
 from agents.domains.support.guards import REPLY_LANGUAGE
 from agents.domains.support.tools import get_my_order, get_my_spending_summary, list_my_orders, request_refund
 
-SYSTEM_PROMPT = Path(__file__).parent / "prompts" / "system.v1.md"
+SYSTEM_PROMPT = Path(__file__).parent / "prompts" / "system.v2.md"
 READ_TOOLS = [list_my_orders, get_my_order, get_my_spending_summary]
 
 

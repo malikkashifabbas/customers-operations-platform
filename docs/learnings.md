@@ -1433,3 +1433,28 @@ Postman se ek hi `conversationId` par 20 se zyada sawal puche, phir `orders` bhe
 Follow-up (`which one failed and why?`, `and can I return earrings?`) ab bhi sahi samajhte hain. Lesson 13 bhi dobara chalaya.
 
 **Doosra sabaq, slow request:** server restart ke baad pehla policy sawal 11.1s laga, jis mein `search_policies` akela 6.28s tha, jabke baad ke sawal ~4s. Sab se mumkin wajah embedding model ka pehli dafa load hona hai. Demo se pehle ek sawal chala kar system garam kar lein.
+
+### Do hisson wala sawal: 9–11 LLM calls aur jhoote steps (2 Nov 2026)
+`list my all orders & how i raise ticket` 11–27s aur ~10,000 tokens le raha tha. LangSmith ke trace se do alag masle nikle.
+
+**Masla 1, kharcha:** knowledge ne orders wale hisse ki bhi search ki (`order history view`). Kuch kaam ka na mila to grade, rewrite aur doosri search hui. Phir compose aur us ka rewrite.
+
+**Masla 2, jhoot:** search ko ticket wala §2 nahi mila. Knowledge ne sahi kaha "maloomat nahi", lekin compose (LLM) ne "support portal" likh diya. Guard ne `portal` roka, to rewrite mein bana: *go to our help center, select "Create a ticket"*. Yani **banned words ki list jhoot nahi rokti, sirf us ke lafz badalwa deti hai.**
+
+**Fixes:**
+1. **Do jawab code jodta hai** (`compose`, `"\n\n".join`). LLM nahi, to wahan nayi baat nahi ghadi ja sakti, aur ek call bachi. LLM compose ab sirf guard ke rewrite mein chalta hai (`compose.v2.md`: jo likha nahi, wo kehna nahi). Streaming ko `joined` flag se pata chalta hai ke poora text ek token mein bhejna hai, warna SSE khali rehta.
+2. **`query.v3.md`:** knowledge sirf company ke rules ki search kare, customer ke apne records ki nahi.
+3. **`answer.v2.md` + `Topics to answer`:** code plan ki queries answer step ko deta hai. Sirf "doosre hisse ignore karo" kehne par wo orders ke baare mein "maloomat nahi" likh deta tha; compose ke bina ye jawab mein seedha nazar aata.
+4. **Document:** §2 ka title `How to reach us and open a support ticket`, aur line *to open, raise or create a ticket, write a subject and a description of your issue from your account*. Jab text mein asli tareeqa likha ho to model ke paas ghadne ki wajah kam hoti hai. `create` likhne ke baad bhi pehle "Create Ticket option" ghadta raha; subject aur description likhne par 3/3 mein ruk gaya.
+
+| | Pehle | Baad mein |
+|---|---|---|
+| LLM calls | 9–11 | 5 |
+| Tokens | ~7,000–10,300 | ~4,200–4,400 |
+| Waqt | 11–27s | 3.6–5.3s (restart ke baad pehla sawal ~9–10s) |
+
+**Evals:** lesson14 **7/7**, lesson15 **19/19**. Waqt ke numbers chhote sample ke hain.
+
+**Baqi kamzori:** ye prompt aur document ka hal hai, guarantee nahi. Grounding check ab bhi steps aur numbers nahi jaanchta, is liye model kisi aur sawal par phir kuch ghad sakta hai. Do jawabon ki tartib ab routes ke hisaab se hai, customer ke sawal ke hisaab se nahi.
+
+**Isi test mein ek aur jhoot:** refund + policy wale ticket mein billing ne khud likh diya "card refunds take 5–10 business days", jabke document mein 5–7 hai, aur knowledge ka sahi jawab usi reply mein neeche tha. Grounding check numbers nahi dekhta, is liye ye pass ho gaya. `billing/prompts/system.v2.md`: refund ka waqt, fee ya deadline sirf tool result se. Teen dafa dobara chalaya: ghalat number nahi aaya. Lesson13 **4/4**, lesson14 **7/7**.
