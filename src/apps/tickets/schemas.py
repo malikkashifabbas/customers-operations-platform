@@ -26,5 +26,4 @@ class StaffTicketOut(ModelSchema):
 
 class ApprovalIn(Schema):
     approved: bool
-    reviewer: str = Field(min_length=1, max_length=100)
     note: str = Field(default="", max_length=500)

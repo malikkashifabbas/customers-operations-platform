@@ -2,6 +2,7 @@
 
 from ninja import NinjaAPI
 
+from apps.accounts.api import router as auth_router
 from apps.chat.api import router as chat_router
 from apps.customers.api import router as customers_router
 from apps.tickets.api import router as tickets_router
@@ -10,6 +11,7 @@ from core.exceptions import DomainError
 
 api = NinjaAPI(title="OpsPilot API", version="0.1.0")
 
+api.add_router("/auth/", auth_router)
 api.add_router("/customers/", customers_router)
 api.add_router("/chat/", chat_router)
 api.add_router("/tickets/", tickets_router)

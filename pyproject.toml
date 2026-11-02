@@ -22,5 +22,6 @@ dependencies = [
     "pgvector>=0.4,<0.5",
     "psycopg[binary]>=3.2",
     "pydantic-settings>=2.6",
+    "pyjwt>=2.10,<3",
     "redis>=5,<7",
 ]

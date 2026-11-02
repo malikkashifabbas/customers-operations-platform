@@ -1469,3 +1469,62 @@ Asli sawalon par 14 jawabon mein 8 pass, 2 adhoore, 4 fail (3 follow-ups ka `con
 **Tasdeeq adhoori:** triage ke 8/9 checks pass, search plan sahi (India 1 search, kapra `wrong item return` + `return window days`). Poore raaste par `i give to you account deatil you raise the ticket` pass. Phir Groq ki daily limit khatam ho gayi, is liye lesson 12, 14, 15 **in changes par nahi chale**.
 
 **Abhi khula:** `to tum pahla yah kun kah rha tha...` prompt badalne ke baad bhi `other_customer` ban raha hai. `ticket raise nhi kr skta kia?` tareeqa batata hai, lekin saaf nahi kehta ke bot khud nahi bana sakta.
+
+## Learning 28 ⭐: Authentication — header kehta tha, token sabit karta hai (Lesson 17)
+
+**Masla:** server `X-Customer-Public-Id` header ko sach maan leta tha. Sirf tenant ID se `GET /api/customers/` 27 customers ke naam, phone, email aur `public_id` de deta tha, aur wo ID header mein bhej kar koi bhi kisi aur ka data dekh sakta tha. Agent ke tools sahi customer tak band the, lekin customer khud jhoota ho sakta tha.
+
+**Hal:** phone + password → server signed JWT deta hai → har request `Authorization: Bearer <token>`. Signature `JWT_SECRET_KEY` se banta hai, is liye token ke andar likha customer badla nahi ja sakta. Token ka payload parha ja sakta hai (encrypted nahi), is liye us mein sirf public ids hain.
+
+**Agent ka code nahi badla.** `CustomerJWT` wahi `CustomerPrincipal` deta hai jo pehle header wali class deti thi: `principal → SupportContext → tools`. Pehle ka design (LLM customer nahi chunta) ab asli pehchaan se juda hai.
+
+**Faisle:**
+| Faisla | Kyun |
+|---|---|
+| PyJWT, `django-ninja-jwt` nahi | Customers `auth.User` nahi hain, aur wo package `django-ninja-extra` bhi laata hai. Chhota code, har line samjhai ja sakti hai |
+| Login mein `tenant_public_id` | Phone sirf company ke andar unique hai: Ali do companies ka customer hai, alag data ke saath |
+| Token se customer har request par DB se | Customer ya company hat jaye to token foran bekaar; ek query ka kharcha |
+| Access 15 minute, refresh 7 din | Chori hua access token jaldi bekaar; customer baar baar password na daale |
+| `algorithms=["HS256"]` | Token ka header kabhi na chune ke check kaise ho (`alg: none` hamla) |
+| Ghalat phone aur ghalat password par ek jaisa jawab aur utna hi kaam | Hamlawar ko pata na chale kaun se phone maujood hain |
+| `reviewer` token se | Pehle body se aata tha: koi bhi kisi ka naam likh sakta tha |
+
+**Test (bina LLM):** 38/38 pass: bina token, kisi aur key se sign, expired, `alg: none`, payload badalna, refresh ko access banana, ghalat issuer, doosri company, customer ka staff route, staff ka chat, Ali ka Sara ka ticket kholna, 5 ghalat logins ke baad sahi password bhi 429. Phir login → chat → refund ticket → staff reject asli API aur Kafka se chala.
+
+**Sabaq jo test ne dobara yaad dilaya:** ticket mere worker ne nahi, pehle se chalte purane worker ne uthaya. Code badlo to saare workers restart karo.
+
+**Abhi nahi hai (pehli baar):** logout, signup, password change. Ye agle hisse mein ban gaye.
+
+### Authentication poori: signup, password change, logout, staff reset (17B)
+Test karte hue pata chala ke naye customer ka password sirf shell se lagta tha. Is liye login ka chakkar band kiya:
+
+| Route | Kaam |
+|---|---|
+| `POST /api/auth/customer/signup` | Customer khud account banaye, apna password rakhe |
+| `POST /api/auth/password` | Purana password de kar naya rakhe |
+| `POST /api/auth/logout` | Is device ke tokens band |
+| `POST /api/customers/{id}/password` | Bhool jane par staff reset kare |
+
+**Do naye sabaq:**
+1. **JWT wapas nahi liya ja sakta,** kyunke server use yaad nahi rakhta. Logout ke liye token ki id (`jti`) Redis denylist mein us ki expiry tak rakhte hain; phir key khud mit jati hai. Ek request par ek Redis check ka kharcha hai.
+2. **Password badla to purane sab tokens khatam.** Har token mein `pwd` hai: password hash ka keyed fingerprint. Password badla to fingerprint nahi milta. Denylist mein har token ki id likhne ki zaroorat nahi, jo server ko pata bhi nahi hoti. HMAC is liye ke token ka payload koi bhi parh sakta hai.
+
+**Maujood phone par signup hamesha 409, chahe password khali ho.** Warna staff ke banaye customer ka account koi bhi apna bana leta aur us ke orders dekh leta.
+
+**Test (bina LLM):** naye 43/43 aur purane 38/38. Test data khud hat gaya.
+
+**Abhi bhi kamzori:**
+- **Phone ka saboot nahi:** signup mein koi bhi kisi ka phone likh sakta hai, kyunke OTP nahi. Purana data phir bhi nahi milta (409), lekin naya number kisi aur ke naam par ban sakta hai.
+- **Phone check:** signup ka 409 batata hai ke phone maujood hai. Bina OTP ise chhupana mumkin nahi.
+- **Password bhool jana:** sirf staff reset; SMS ya email reset baad mein.
+- **Lock ka ghalat istemal:** koi kisi ka phone daal kar 30 minute lock karwa sakta hai.
+- **Logout:** Redis band ho to token check nahi hota aur request 500 deti hai; band hona khula rasta nahi banata.
+- **Baad ke kaam:** HTTPS; browser `EventSource` header nahi bhej sakta, frontend `fetch` se stream parhe.
+
+### Evals: chaar fixes aur auth ke baad (2 Nov 2026)
+**Lesson 12: 16/16**, final code par pehli poori run. Lesson 14 ke 2 sawal pass hue, phir Groq ki daily limit; lesson 15 nahi chala. Aap ke messages mein theek hua: kapre wala sawal (48 ghante + 30 din), `kasa create krun` (`unclear`, aur history ke saath knowledge), naya refusal text, follow-up memory.
+
+**Abhi khula:**
+1. `kasa create krun` aur `acha ab man kia krun` par do jawabon mein phir "Create Ticket option" ghada gaya. Pichla 3/3 chhota sample tha; prompt aur document ka hal pakka nahi nikla.
+2. `to tum pahla yah kun kah rha tha...` ab bhi `other_customer`.
+3. `ticket raise nhi kr skta kia ?` saaf nahi kehta ke bot khud ticket nahi bana sakta.

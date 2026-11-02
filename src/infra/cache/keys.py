@@ -17,3 +17,11 @@ def lock(name: str) -> str:
 
 def rate(scope: str, subject: str, window: int) -> str:
     return f"{PREFIX}:rate:{scope}:{subject}:{window}"
+
+
+def login_failures(attempt_hash: str) -> str:
+    return f"{PREFIX}:login:failures:{attempt_hash}"
+
+
+def revoked_token(jti: str) -> str:
+    return f"{PREFIX}:token:revoked:{jti}"

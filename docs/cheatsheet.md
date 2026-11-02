@@ -5,8 +5,8 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 ## 0. IDs ke naam = database ke naam
 | Bahar ka naam (header / JSON / event) | Database | Kahan se lein |
 |---|---|---|
-| `X-Tenant-Public-Id` header, `tenant_public_id` event field | `core_tenant.public_id` | `uv run src/manage.py list_ids` |
-| `X-Customer-Public-Id` header | `customers_customer.public_id` | `list_ids` |
+| `tenant_public_id` (login body, token claim, event field) | `core_tenant.public_id` | `uv run src/manage.py list_ids` |
+| `customer_public_id` (token claim) | `customers_customer.public_id` | `list_ids` |
 | `ticket_public_id` event field, `public_id` in ticket JSON | `tickets_ticket.public_id` | `POST /api/tickets/` ka jawab |
 | `tenant_id`, `customer_id` (DB columns) | andar ke BigInt FK (1, 2, 3) | **kabhi bahar nahi** |
 
@@ -63,7 +63,7 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `services.decide_approval(...)` = faisla + outbox event **ek transaction** | Staff API tez; worker Kafka se resume karta hai | `apps/tickets/services/tickets.py` |
 | `select_for_update()` + status dobara check | Double approval → 409, double refund → impossible | `decide_approval`, `orders.refund_order` |
 | `ROUTES = {topic: (EventClass, handler, dlq_topic)}` | Ek worker, kai event types | `run_agent_worker.py` |
-| `X-Tenant-Public-Id` + `X-Staff-Key` (`hmac.compare_digest`) | Arzi staff auth (JWT roles tak) | `core/staff.py` |
+| `Authorization: Bearer <staff token>` | Staff auth (Lesson 17); `reviewer` token se aata hai | `apps/accounts/auth.py` |
 | `uv run python playground/lesson13_approval.py` | A failed / B reject / C approve / D chat — PASS/FAIL | playground |
 
 ### 1D. Supervisor + subgraphs (Lesson 14)
@@ -144,6 +144,27 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `AIMessage("\n\n".join(drafts), response_metadata={"joined": True})` | Do jawab code jodta hai: LLM nahi, to kuch ghada nahi ja sakta; streaming ise ek token mein bhejti hai | `orchestrator/graph.py`, `core/streaming.py` |
 | `Topics to answer` | Answer step sirf plan ki queries ka jawab de, doosre specialist ka hissa na chhede | `domains/knowledge/nodes.py` |
 | `FILLER_WORDS` (`policy`, `policies`) | Query se wo lafz hatao jo har document mein hai | `agents/domains/knowledge/tools.py` |
+
+### 1H. Authentication — JWT (Lesson 17)
+
+| Code | Kya karta hai | Kahan |
+|---|---|---|
+| `POST /api/auth/customer/login` `{tenant_public_id, phone, password}` | Phone aur password check, access + refresh token | `apps/accounts/api.py` |
+| `POST /api/auth/staff/login` `{username, password}` | Staff login (Django `User` + `StaffProfile`) | `apps/accounts/api.py` |
+| `POST /api/auth/refresh`, `GET /api/auth/me` | Naya access token; token kis ka hai | `apps/accounts/api.py` |
+| `POST /api/auth/customer/signup` | Customer khud account banaye aur apna password rakhe; maujood phone par 409 | `apps/accounts/services/passwords.py` |
+| `POST /api/auth/password` | Password badlo; purane sab tokens khatam, naye tokens milte hain | `services/passwords.py` |
+| `POST /api/auth/logout` | Is device ke tokens band; id Redis mein expiry tak (`token_denylist`) | `infra/cache/token_denylist.py` |
+| `POST /api/customers/{id}/password` | Staff customer ka password reset kare | `apps/customers/api.py` |
+| `"pwd": password_fingerprint(hash)` | Token mein password ka keyed fingerprint: password badla to token bekaar | `apps/accounts/tokens.py` |
+| `validate_password(password)` | Kam az kam 8 characters, common aur sirf numbers wale password nahi | `services/passwords.py` |
+| `Authorization: Bearer <token>` | Har API par pehchaan; purane `X-...` headers ab 401 | `apps/accounts/auth.py` |
+| `jwt.decode(token, key, algorithms=["HS256"], issuer=..., options={"require": [...]})` | Signature, expiry aur issuer check; algorithm token nahi chunta | `apps/accounts/tokens.py` |
+| `CustomerJWT` / `StaffJWT` (`HttpBearer`) | Token se `CustomerPrincipal` / `StaffPrincipal`; role ghalat to 401 | `apps/accounts/auth.py` |
+| `check_password`, `make_password(password)` | Hash check; phone na mile to bhi utna hi kaam, timing se phone pata na chale | `apps/accounts/services/login.py` |
+| `login_attempts.is_locked / record_failure / clear` | 5 ghalat koshishein = 30 minute lock (Redis, hash key) | `infra/cache/login_attempts.py` |
+| `uv run src/manage.py seed_data` | Demo passwords `DEMO_PASSWORD` se; staff `staff.demo-company` | `devtools` |
+| `uv run src/manage.py list_ids` | Login ke liye tenant id, phones, staff usernames | `devtools` |
 
 ---
 

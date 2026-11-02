@@ -15,12 +15,12 @@ from agents.core.checkpointers import get_redis_checkpointer
 from agents.core.streaming import STREAM_MODES, agent_events
 from agents.domains.support.context import SupportContext
 from agents.orchestrator.graph import build_graph
+from apps.accounts.auth import CustomerPrincipal
 from core.limits import CHAT_MESSAGES_PER_MINUTE, CONVERSATION_LOCK_SECONDS
 from core.sse import sse
 from infra.cache import locks, ratelimit
 from infra.observability.tracing import trace_config
 
-from .auth import CustomerPrincipal
 from .exceptions import AssistantUnavailable, ConversationBusy, RateLimited
 
 logger = logging.getLogger(__name__)

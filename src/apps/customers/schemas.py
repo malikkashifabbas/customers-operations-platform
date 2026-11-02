@@ -10,6 +10,7 @@ class CustomerIn(Schema):
     full_name: str = Field(min_length=1, max_length=200)
     phone: str = Field(min_length=7, max_length=32)
     email: EmailStr | None = None
+    password: str | None = Field(default=None, min_length=1, max_length=128)  # without one, this customer cannot log in yet
 
 
 class CustomerOut(ModelSchema):

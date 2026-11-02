@@ -2,10 +2,456 @@
   "info": {
     "name": "OpsPilot API",
     "_postman_id": "8f6d2a52-9a1c-4b8e-9f3e-0b7c5e1a4d21",
-    "description": "All OpsPilot REST APIs for frontend and service developers.\n\n**Setup:** import this collection and `OpsPilot.local.postman_environment.json`, select the *OpsPilot Local* environment, run `uv run src/manage.py seed_data` and `uv run src/manage.py runserver`. Get any tenant/customer ids with `uv run src/manage.py list_ids`.\n\n**Headers (temporary until JWT login):**\n- `X-Tenant-Public-Id` = `core_tenant.public_id` (the company) — every API.\n- `X-Customer-Public-Id` = `customers_customer.public_id` — chat and tickets APIs. The customer must belong to that tenant, otherwise 401.\n\n**Response formats:**\n- Lists are paginated: `?limit=20&offset=0` → `{\"items\": [...], \"count\": 57}`.\n- Business errors: `{\"code\": \"CUSTOMER_ALREADY_EXISTS\", \"message\": \"...\"}` with 4xx/5xx status.\n- Auth errors: 401 `{\"detail\": \"Unauthorized\"}`.\n- Validation errors: 422 `{\"detail\": [{\"loc\": [...], \"msg\": \"...\"}]}`.\n- IDs in URLs and bodies are always `public_id` (UUID), never the internal numeric id.\n\nLive docs: `{{baseUrl}}/api/docs` (Swagger), OpenAPI JSON: `{{baseUrl}}/api/openapi.json`.",
+    "description": "All OpsPilot REST APIs for frontend and service developers.\n\n**Setup:** import the collection and *OpsPilot Local* environment, put `DEMO_PASSWORD` from your `.env` into `demoPassword`, then run *Auth → Customer login (Ali)* and *Auth → Staff login*.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
+    {
+      "name": "Auth (start here)",
+      "description": "Log in first. Customer routes use `accessToken`, staff routes use `staffAccessToken`; the test scripts save them. Access tokens last 15 minutes: run *Refresh* or log in again on a 401.",
+      "item": [
+        {
+          "name": "Customer signup",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/customer/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "customer",
+                "signup"
+              ]
+            },
+            "description": "201 → tokens, already logged in. Phone already in this company → 409 `CUSTOMER_ALREADY_EXISTS`. Weak password → 400 `WEAK_PASSWORD`. Change the phone to run it again.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_public_id\": \"{{tenantPublicId}}\",\n  \"full_name\": \"Kashif Test\",\n  \"phone\": \"+923009998877\",\n  \"email\": \"kashif.test@example.com\",\n  \"password\": \"Blue-Falcon-2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  pm.collectionVariables.set('accessToken', pm.response.json().access_token);",
+                  "  pm.collectionVariables.set('refreshToken', pm.response.json().refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer login (Ali)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/customer/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "customer",
+                "login"
+              ]
+            },
+            "description": "200 → `access_token`, `refresh_token`, `token_type`, `expires_in`. Wrong details → 401 `INVALID_CREDENTIALS`. 5 failures → 429 `LOGIN_LOCKED` for 30 minutes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_public_id\": \"{{tenantPublicId}}\",\n  \"phone\": \"{{customerPhone}}\",\n  \"password\": \"{{demoPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 with tokens', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('accessToken', pm.response.json().access_token);",
+                  "  pm.collectionVariables.set('refreshToken', pm.response.json().refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer login (Sara)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/customer/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "customer",
+                "login"
+              ]
+            },
+            "description": "Replaces `accessToken`, so the next chat runs as Sara. Run *Customer login (Ali)* to switch back.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_public_id\": \"{{tenantPublicId}}\",\n  \"phone\": \"{{saraPhone}}\",\n  \"password\": \"{{demoPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 with tokens', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('accessToken', pm.response.json().access_token);",
+                  "  pm.collectionVariables.set('refreshToken', pm.response.json().refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Staff login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/staff/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "staff",
+                "login"
+              ]
+            },
+            "description": "Saves `staffAccessToken`, used by *Customers* and *Staff approvals*.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{staffUsername}}\",\n  \"password\": \"{{demoPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 with tokens', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.collectionVariables.set('staffAccessToken', pm.response.json().access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh access token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "New access token without the password. Refresh tokens last 7 days.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.collectionVariables.set('accessToken', pm.response.json().access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Who am I",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Shows who the token belongs to: `role`, `name`, `tenant_public_id`, `customer_public_id`.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Change password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "password"
+              ]
+            },
+            "description": "200 → new tokens. Every old token of this user stops working, on every device. Wrong current password → 401; 5 wrong tries → 429.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"Blue-Falcon-2026\",\n  \"new_password\": \"Green-Tiger-2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  pm.collectionVariables.set('accessToken', pm.response.json().access_token);",
+                  "  pm.collectionVariables.set('refreshToken', pm.response.json().refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "204. This access and refresh token stop working; other devices stay logged in.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wrong password (expect 401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/customer/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "customer",
+                "login"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_public_id\": \"{{tenantPublicId}}\",\n  \"phone\": \"{{customerPhone}}\",\n  \"password\": \"wrong-password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
     {
       "name": "Customers",
       "description": "Customers of one tenant. Phone is unique per tenant.",
@@ -14,14 +460,26 @@
           "name": "List customers",
           "request": {
             "method": "GET",
-            "header": [{ "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" }],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/customers/?limit=20&offset=0",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customers", ""],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customers",
+                ""
+              ],
               "query": [
-                { "key": "limit", "value": "20" },
-                { "key": "offset", "value": "0" }
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
               ]
             },
             "description": "Newest first. Response: `{\"items\": [CustomerOut], \"count\": n}`.\n\nCustomerOut = `{public_id, full_name, phone, email, created_at}`."
@@ -45,18 +503,30 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"full_name\": \"Postman Test Customer\",\n  \"phone\": \"+92 300 555 0101\",\n  \"email\": \"postman.test@example.com\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "raw": "{\n  \"full_name\": \"Postman Test Customer\",\n  \"phone\": \"+92 300 555 0101\",\n  \"email\": \"postman.test@example.com\",\n  \"password\": \"Blue-Falcon-2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/customers/",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customers", ""]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customers",
+                ""
+              ]
             },
             "description": "201 → CustomerOut (phone is normalised: spaces/dashes removed). The test script saves `public_id` into `newCustomerPublicId`.\n\n409 `CUSTOMER_ALREADY_EXISTS` if the phone already exists in this tenant. 422 if the email or name is invalid."
           }
@@ -65,16 +535,87 @@
           "name": "Get customer",
           "request": {
             "method": "GET",
-            "header": [{ "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" }],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/customers/{{newCustomerPublicId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "customers", "{{newCustomerPublicId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customers",
+                "{{newCustomerPublicId}}"
+              ]
             },
             "description": "Run *Create customer* first (it fills `newCustomerPublicId`). 404 if the customer belongs to another tenant."
           }
+        },
+        {
+          "name": "Reset customer password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/{{newCustomerPublicId}}/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customers",
+                "{{newCustomerPublicId}}",
+                "password"
+              ]
+            },
+            "description": "Staff only, own company only. 204. For a customer who forgot their password; their old sessions end. A later lesson can replace this with SMS or email reset.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_password\": \"Green-Tiger-2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
         }
-      ]
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{staffAccessToken}}",
+            "type": "string"
+          }
+        ]
+      }
     },
     {
       "name": "Chat (support agent)",
@@ -98,19 +639,30 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
-              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"message\": \"give me my orders\",\n  \"conversation_id\": \"{{conversationId}}\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/chat/messages",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "chat", "messages"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "messages"
+              ]
             },
             "description": "Waits for the full answer. Response:\n```json\n{\n  \"conversation_id\": \"postman-demo-1\",\n  \"reply\": \"Here are your recent orders: ...\",\n  \"tool_calls\": [{\"name\": \"list_my_orders\", \"args\": {}}],\n  \"llm_calls\": 2,\n  \"tokens\": 1366,\n  \"latency_ms\": 3780,\n  \"blocked_reason\": null,\n  \"output_flags\": [],\n  \"output_retries\": 0,\n  \"routes\": [\"billing\"]\n}\n```\n`blocked_reason` (input guard): `other_customer` | `prompt_injection` | `off_topic` when the question was refused before the agent ran (then `reply` is a fixed refusal and `tool_calls` is empty).\n`output_flags` (output guard): non-empty when the agent's reply had an ungrounded email / link / order number or a banned claim (\"payment link\", \"I have refunded\") The agent first gets **one rewrite** with the reason (`output_retries: 1`); only if the rewrite is still unsafe is it replaced by a safe reply. `llm_calls` / `tokens` include the guard classifier, the supervisor and rejected/merged drafts.\n`routes` (Lesson 14): which specialists the supervisor picked — `billing` (orders, payments, spending, refunds), `account` (profile), `knowledge` (policies; no knowledge base yet). Two or more = answered in parallel and merged into one reply.\n503 `ASSISTANT_UNAVAILABLE` if the LLM provider fails (rate limit, network).\n409 `CONVERSATION_BUSY` if the previous message in the same `conversation_id` is still being answered (Redis lock).\n429 `RATE_LIMITED` after 10 messages per customer per minute.\nChat memory is kept in Redis for 24 hours after the last message."
           }
@@ -120,19 +672,30 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
-              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"message\": \"which one failed and why?\",\n  \"conversation_id\": \"{{conversationId}}\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/chat/messages",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "chat", "messages"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "messages"
+              ]
             },
             "description": "Same `conversation_id` as the previous message, so the agent remembers the earlier answer (often no tool call needed)."
           }
@@ -142,20 +705,35 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
-              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" },
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Accept", "value": "text/event-stream" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"message\": \"why did ORD-1002 fail?\",\n  \"conversation_id\": \"{{conversationId}}\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/chat/messages/stream",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "chat", "messages", "stream"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "messages",
+                "stream"
+              ]
             },
             "description": "Server-Sent Events (`text/event-stream`). Each event is `event: <type>` + `data: <json>` + blank line:\n\n| event | data | frontend action |\n|---|---|---|\n| `start` | `{conversation_id}` | save the id for the next message |\n| `routing` | `{domains}` | which specialists work on this message (debug / \"checking your orders and profile...\") |\n| `tool_call` | `{name, args}` | show \"checking your orders...\" |\n| `tool_result` | `{name, content}` | optional (debug) |\n| `token` | `{text}` | append text to the chat bubble |\n| `guardrail` | `{blocked_reason}` | question refused before the agent ran; a `token` with the refusal follows |\n| `reset` | `{}` | output guard rejected the draft and asked for one rewrite: **clear** the bubble, new tokens follow |\n| `replace` | `{text}` | output guard caught an unsafe reply: **replace** the whole bubble text with `text` |\n| `done` | `{conversation_id, latency_ms}` | stop the typing indicator |\n| `error` | `{code, message}` | show the message |\n\nBrowser: use `fetch()` + `response.body.getReader()` (EventSource only supports GET)."
           }
@@ -176,14 +754,6 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "X-Tenant-Public-Id",
-                "value": "{{tenantPublicId}}"
-              },
-              {
-                "key": "X-Customer-Public-Id",
-                "value": "{{customerPublicId}}"
-              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
@@ -232,14 +802,6 @@
             "method": "POST",
             "header": [
               {
-                "key": "X-Tenant-Public-Id",
-                "value": "{{tenantPublicId}}"
-              },
-              {
-                "key": "X-Customer-Public-Id",
-                "value": "{{customerPublicId}}"
-              },
-              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
@@ -267,7 +829,17 @@
             "description": "Lesson 15: the supervisor routes general policy questions to the `knowledge` specialist, which searches this tenant's policy documents (hybrid: pgvector meaning + Postgres full-text keywords, merged with Reciprocal Rank Fusion), grades the results, rewrites the query once if they are off-topic, and answers only from the retrieved text with a `[Document, section]` citation.\n\nTry the same question with `X-Tenant-Public-Id: {{otherTenantPublicId}}` (NimbusTech — needs a NimbusTech customer id): the answer must come from NimbusTech's documents (no COD there), never Demo Company's."
           }
         }
-      ]
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      }
     },
     {
       "name": "Tickets (async, Kafka)",
@@ -291,16 +863,31 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
-              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"subject\": \"Payment problem\",\n  \"body\": \"My order ORD-1002 failed, why did that happen?\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "url": { "raw": "{{baseUrl}}/api/tickets/", "host": ["{{baseUrl}}"], "path": ["api", "tickets", ""] },
+            "url": {
+              "raw": "{{baseUrl}}/api/tickets/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tickets",
+                ""
+              ]
+            },
             "description": "202 → TicketOut `{public_id, subject, body, status: \"open\", reply: \"\", created_at, answered_at: null}`. The test script saves `public_id` into `ticketPublicId`."
           }
         },
@@ -308,11 +895,18 @@
           "name": "Get ticket (poll until answered)",
           "request": {
             "method": "GET",
-            "header": [
-              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
-              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" }
-            ],
-            "url": { "raw": "{{baseUrl}}/api/tickets/{{ticketPublicId}}", "host": ["{{baseUrl}}"], "path": ["api", "tickets", "{{ticketPublicId}}"] },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tickets/{{ticketPublicId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tickets",
+                "{{ticketPublicId}}"
+              ]
+            },
             "description": "`status`: `open` (waiting for the worker) → `answered` (with `reply` and `answered_at`) or `failed` (worker gave up after 3 attempts). 404 if the ticket belongs to another customer."
           }
         },
@@ -321,16 +915,43 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
-              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" },
-              { "key": "Accept", "value": "text/event-stream" },
-              { "key": "Last-Event-ID", "value": "", "disabled": true, "description": "Enable and paste an event id to resume after it" }
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              },
+              {
+                "key": "Last-Event-ID",
+                "value": "",
+                "disabled": true,
+                "description": "Enable and paste an event id to resume after it"
+              }
             ],
-            "url": { "raw": "{{baseUrl}}/api/tickets/{{ticketPublicId}}/stream", "host": ["{{baseUrl}}"], "path": ["api", "tickets", "{{ticketPublicId}}", "stream"] },
+            "url": {
+              "raw": "{{baseUrl}}/api/tickets/{{ticketPublicId}}/stream",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tickets",
+                "{{ticketPublicId}}",
+                "stream"
+              ]
+            },
             "description": "Live events from the worker, stored in a Redis Stream (kept 1 hour). Open it any time: you always get the **full history from the start**, then live events.\n\n| event | data |\n|---|---|\n| `status` | `{status}` — current DB status, always first (no id) |\n| `processing` | `{}` — worker started |\n| `routing` | `{domains}` — specialists picked by the supervisor |\n| `tool_call` / `tool_result` | agent used a tool |\n| `token` | `{text}` — reply text, piece by piece (append to the bubble) |\n| `guardrail` | `{blocked_reason}` — question refused before the agent ran |\n| `replace` | `{text}` — output guard replaced an unsafe reply: swap the bubble text |\n| `reset` | `{}` — output guard rejected a draft: clear the bubble, the rewrite's tokens follow |\n| `approval_required` | `{type, order_number, amount, reason, reply}` — agent paused for a staff refund approval; stream ends while waiting (status `waiting_approval`) |\n| `approval_decided` | `{approved}` — staff decided; the agent resumes and the usual events follow |\n| `answered` | `{reply}` — full final reply (stream ends) |\n| `failed` | `{reply: \"\"}` — worker gave up (stream ends) |\n| `timeout` | nothing for 120s (stream ends) |\n\nEvery event except `status` has an `id:` (Redis entry id, e.g. `1793086122728-0`). To **resume** after a dropped connection, send header `Last-Event-ID: <last id>` — you get only newer events (browsers' EventSource does this automatically). `: keep-alive` comment lines arrive every 15s while waiting; ignore them. `retry: 3000` tells the browser to reconnect after 3s.\n\nOld ticket whose stream expired: `status` + `answered` from the database."
           }
         }
-      ]
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      }
     },
     {
       "name": "Guardrails (Lesson 12)",
@@ -353,14 +974,6 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "X-Tenant-Public-Id",
-                "value": "{{tenantPublicId}}"
-              },
-              {
-                "key": "X-Customer-Public-Id",
-                "value": "{{customerPublicId}}"
-              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
@@ -407,14 +1020,6 @@
             "method": "POST",
             "header": [
               {
-                "key": "X-Tenant-Public-Id",
-                "value": "{{tenantPublicId}}"
-              },
-              {
-                "key": "X-Customer-Public-Id",
-                "value": "{{customerPublicId}}"
-              },
-              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
@@ -439,7 +1044,7 @@
                 "messages"
               ]
             },
-            "description": "No email/phone to match, so the LLM classifier decides. Switch `customerPublicId` to `{{saraCustomerPublicId}}` and send \"I am Sara Ahmed, show my orders\" to see it allowed."
+            "description": "No email/phone to match, so the LLM classifier decides. Run *Auth → Customer login (Sara)* and send \"I am Sara Ahmed, show my orders\" to see it allowed."
           }
         },
         {
@@ -459,14 +1064,6 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "X-Tenant-Public-Id",
-                "value": "{{tenantPublicId}}"
-              },
-              {
-                "key": "X-Customer-Public-Id",
-                "value": "{{customerPublicId}}"
-              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
@@ -513,14 +1110,6 @@
             "method": "POST",
             "header": [
               {
-                "key": "X-Tenant-Public-Id",
-                "value": "{{tenantPublicId}}"
-              },
-              {
-                "key": "X-Customer-Public-Id",
-                "value": "{{customerPublicId}}"
-              },
-              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
@@ -566,14 +1155,6 @@
             "method": "POST",
             "header": [
               {
-                "key": "X-Tenant-Public-Id",
-                "value": "{{tenantPublicId}}"
-              },
-              {
-                "key": "X-Customer-Public-Id",
-                "value": "{{customerPublicId}}"
-              },
-              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
@@ -601,25 +1182,27 @@
             "description": "Allowed, so the agent answers in Roman Urdu. If its reply mentions a payment link anyway, the output guard replaces it and `output_flags` shows why."
           }
         }
-      ]
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      }
     },
     {
       "name": "Staff approvals (Lesson 13)",
-      "description": "The agent pauses (LangGraph `interrupt()`) when a ticket asks for a refund of a paid order. Staff see it here and decide; the decision goes through the outbox + Kafka (`tickets.approval_decided`) and the worker resumes the agent with `Command(resume=decision)`.\n\n**Auth (temporary until JWT roles):** `X-Tenant-Public-Id` + `X-Staff-Key`. Put the `STAFF_API_KEY` value from your `.env` into the environment variable `staffApiKey` (it is empty in git on purpose).\n\n**Flow:** Tickets → *Create ticket* with body `Please refund ORD-1001, I was charged twice.` → stream ends with `approval_required` → *List* → *Approve* or *Reject* → stream again → `approval_decided` … `answered`.",
+      "description": "The agent pauses (LangGraph `interrupt()`) when a ticket asks for a refund of a paid order. Staff see it here and decide; the decision goes through the outbox + Kafka (`tickets.approval_decided`) and the worker resumes the agent with `Command(resume=decision)`.\n\n**Auth (temporary until JWT roles):** `X-Tenant-Public-Id` + `staff token`. Put the `STAFF_API_KEY` value from your `.env` into the environment variable `staffAccessToken` (it is empty in git on purpose).\n\n**Flow:** Tickets → *Create ticket* with body `Please refund ORD-1001, I was charged twice.` → stream ends with `approval_required` → *List* → *Approve* or *Reject* → stream again → `approval_decided` … `answered`.",
       "item": [
         {
           "name": "List tickets waiting for approval",
           "request": {
             "method": "GET",
             "header": [
-              {
-                "key": "X-Tenant-Public-Id",
-                "value": "{{tenantPublicId}}"
-              },
-              {
-                "key": "X-Staff-Key",
-                "value": "{{staffApiKey}}"
-              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
@@ -659,14 +1242,6 @@
             "method": "POST",
             "header": [
               {
-                "key": "X-Tenant-Public-Id",
-                "value": "{{tenantPublicId}}"
-              },
-              {
-                "key": "X-Staff-Key",
-                "value": "{{staffApiKey}}"
-              },
-              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
@@ -687,7 +1262,7 @@
             "description": "202: decision saved + `tickets.approval_decided` event (one transaction). The worker resumes the agent: the refund tool refunds the order, the agent tells the customer. Sending again → 409 `APPROVAL_NOT_PENDING`.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"approved\": true,\n  \"reviewer\": \"kashif\",\n  \"note\": \"Duplicate charge confirmed.\"\n}",
+              "raw": "{\n  \"approved\": true,\n  \"note\": \"Duplicate charge confirmed.\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -713,14 +1288,6 @@
             "method": "POST",
             "header": [
               {
-                "key": "X-Tenant-Public-Id",
-                "value": "{{tenantPublicId}}"
-              },
-              {
-                "key": "X-Staff-Key",
-                "value": "{{staffApiKey}}"
-              },
-              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
@@ -741,7 +1308,7 @@
             "description": "Same as approve; the order stays paid and the agent passes the staff note to the customer.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"approved\": false,\n  \"reviewer\": \"kashif\",\n  \"note\": \"We found only one charge on your card.\"\n}",
+              "raw": "{\n  \"approved\": false,\n  \"note\": \"We found only one charge on your card.\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -749,38 +1316,56 @@
               }
             }
           }
-        },
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{staffAccessToken}}",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Security checks",
+      "item": [
         {
-          "name": "Wrong staff key (expect 401)",
+          "name": "Chat without a token (expect 401)",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
-              {
-                "key": "X-Tenant-Public-Id",
-                "value": "{{tenantPublicId}}"
-              },
-              {
-                "key": "X-Staff-Key",
-                "value": "wrong-key"
-              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/staff/tickets/",
+              "raw": "{{baseUrl}}/api/chat/messages",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "staff",
-                "tickets",
-                ""
+                "chat",
+                "messages"
               ]
             },
-            "description": "Header `X-Staff-Key` does not match `STAFF_API_KEY` → 401. Unset `STAFF_API_KEY` in .env → the staff API refuses everyone."
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"my orders\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
           },
           "event": [
             {
@@ -793,66 +1378,260 @@
               }
             }
           ]
-        }
-      ]
-    },
-    {
-      "name": "Security checks",
-      "description": "Requests that must be rejected — useful to verify tenant isolation after changes.",
-      "item": [
-        {
-          "name": "Chat without X-Customer-Public-Id (expect 401)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": { "mode": "raw", "raw": "{\n  \"message\": \"hi\"\n}", "options": { "raw": { "language": "json" } } },
-            "url": { "raw": "{{baseUrl}}/api/chat/messages", "host": ["{{baseUrl}}"], "path": ["api", "chat", "messages"] }
-          }
         },
         {
-          "name": "Customer from another tenant (expect 401)",
+          "name": "Old identity headers (expect 401)",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-Public-Id", "value": "{{otherTenantPublicId}}" },
-              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Public-Id",
+                "value": "{{tenantPublicId}}"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"message\": \"my orders\"\n}", "options": { "raw": { "language": "json" } } },
-            "url": { "raw": "{{baseUrl}}/api/chat/messages", "host": ["{{baseUrl}}"], "path": ["api", "chat", "messages"] },
-            "description": "Demo Company's customer sent with NimbusTech's tenant id."
-          }
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "messages"
+              ]
+            },
+            "description": "Lesson 17 closed this: headers no longer say who you are.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"my orders\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Forged token (expect 401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic3RhZmYifQ.not-a-real-signature",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer token on customers API (expect 401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customers",
+                ""
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer token on staff route (expect 401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/tickets/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "tickets",
+                ""
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Invalid conversation_id (expect 422)",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-Public-Id", "value": "{{tenantPublicId}}" },
-              { "key": "X-Customer-Public-Id", "value": "{{customerPublicId}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"message\": \"hi\",\n  \"conversation_id\": \"x:y\"\n}", "options": { "raw": { "language": "json" } } },
-            "url": { "raw": "{{baseUrl}}/api/chat/messages", "host": ["{{baseUrl}}"], "path": ["api", "chat", "messages"] }
-          }
-        },
-        {
-          "name": "List customers without X-Tenant-Public-Id (expect 401)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": { "raw": "{{baseUrl}}/api/customers/", "host": ["{{baseUrl}}"], "path": ["api", "customers", ""] }
-          }
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "messages"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"hi\",\n  \"conversation_id\": \"bad id with spaces\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
         }
       ]
     }
   ],
   "variable": [
-    { "key": "conversationId", "value": "postman-demo-1" },
-    { "key": "newCustomerPublicId", "value": "" },
-    { "key": "ticketPublicId", "value": "" }
+    {
+      "key": "conversationId",
+      "value": "postman-demo-1"
+    },
+    {
+      "key": "newCustomerPublicId",
+      "value": ""
+    },
+    {
+      "key": "ticketPublicId",
+      "value": ""
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "staffAccessToken",
+      "value": ""
+    }
   ]
 }

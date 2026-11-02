@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     # OpsPilot apps
     'core',
     'apps.customers',
+    'apps.accounts',
     'apps.orders',
     'apps.chat',
     'apps.tickets',

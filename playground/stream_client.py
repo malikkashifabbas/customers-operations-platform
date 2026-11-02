@@ -9,11 +9,12 @@ import argparse
 import json
 import sys
 
-import django_setup  # noqa: F401  (only used to look up the demo ids by phone/email)
+import django_setup  # noqa: F401  (only used to look up the demo login details)
 import httpx
 from django.db.models import Q
 
 from apps.customers.models import Customer
+from config.env import env
 from core.models import Tenant
 
 
@@ -28,7 +29,12 @@ def main() -> None:
 
     tenant = Tenant.objects.get(slug=args.tenant)
     customer = Customer.objects.get(Q(phone=args.customer) | Q(email=args.customer), tenant=tenant)
-    headers = {"X-Tenant-Public-Id": str(tenant.public_id), "X-Customer-Public-Id": str(customer.public_id)}
+    login = httpx.post(
+        f"{args.base_url}/api/auth/customer/login",
+        json={"tenant_public_id": str(tenant.public_id), "phone": customer.phone, "password": env.demo_password.get_secret_value()},
+    )
+    login.raise_for_status()
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     body = {"message": args.message, "conversation_id": args.conversation}
 
     event = None

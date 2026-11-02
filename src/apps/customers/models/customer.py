@@ -9,6 +9,8 @@ class Customer(TenantScopedModel):
     full_name = models.CharField(max_length=200)
     phone = models.CharField(max_length=32)
     email = models.EmailField(blank=True)
+    # Django's salted hash, never the password; blank means this customer cannot log in yet.
+    password = models.CharField(max_length=128, blank=True, editable=False)
 
     class Meta:
         constraints = [

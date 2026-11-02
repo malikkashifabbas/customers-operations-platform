@@ -45,8 +45,10 @@ class Env(BaseSettings):
     langsmith_endpoint: str = "https://api.smith.langchain.com"
     langsmith_mask_pii: bool = True  # phones/emails/CNICs become [phone]/[email]/[cnic] before traces leave the process
 
-    # Shared key for the staff approval API until JWT roles exist; unset = staff API refuses everyone.
-    staff_api_key: SecretStr | None = None
+    # Signs every login token; anyone who has it can pretend to be any user, so it stays in .env only.
+    jwt_secret_key: SecretStr | None = None
+    # Password seed_data gives the fake demo customers and staff; local testing only.
+    demo_password: SecretStr | None = None
 
 
 env = Env()
