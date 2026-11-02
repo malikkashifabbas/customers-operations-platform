@@ -1458,3 +1458,14 @@ Follow-up (`which one failed and why?`, `and can I return earrings?`) ab bhi sah
 **Baqi kamzori:** ye prompt aur document ka hal hai, guarantee nahi. Grounding check ab bhi steps aur numbers nahi jaanchta, is liye model kisi aur sawal par phir kuch ghad sakta hai. Do jawabon ki tartib ab routes ke hisaab se hai, customer ke sawal ke hisaab se nahi.
 
 **Isi test mein ek aur jhoot:** refund + policy wale ticket mein billing ne khud likh diya "card refunds take 5–10 business days", jabke document mein 5–7 hai, aur knowledge ka sahi jawab usi reply mein neeche tha. Grounding check numbers nahi dekhta, is liye ye pass ho gaya. `billing/prompts/system.v2.md`: refund ka waqt, fee ya deadline sirf tool result se. Teen dafa dobara chalaya: ghalat number nahi aaya. Lesson13 **4/4**, lesson14 **7/7**.
+
+### Aap ke test se chaar fixes (2 Nov 2026)
+Asli sawalon par 14 jawabon mein 8 pass, 2 adhoore, 4 fail (3 follow-ups ka `conversation_id` alag tha). Fixes:
+1. **Refusal text:** ab policies bhi batata hai, kyunke bot policy ke jawab deta hai.
+2. **Triage `unclear`:** samajh na aane wala chhota sawal ab fixed text mein wapas poochta hai; LLM specialist nahi chalta. Pichli baat-cheet se matlab mil jaye to normal route.
+3. **Ticket:** ticket wale sawal knowledge ko; agent saaf kahe ke wo khud ticket nahi bana sakta (`answer.v3`, account aur billing prompts).
+4. **`query.v4`:** ek sawal, ek search; "theek nahi" par damaged/wrong rule bhi.
+
+**Tasdeeq adhoori:** triage ke 8/9 checks pass, search plan sahi (India 1 search, kapra `wrong item return` + `return window days`). Poore raaste par `i give to you account deatil you raise the ticket` pass. Phir Groq ki daily limit khatam ho gayi, is liye lesson 12, 14, 15 **in changes par nahi chale**.
+
+**Abhi khula:** `to tum pahla yah kun kah rha tha...` prompt badalne ke baad bhi `other_customer` ban raha hai. `ticket raise nhi kr skta kia?` tareeqa batata hai, lekin saaf nahi kehta ke bot khud nahi bana sakta.

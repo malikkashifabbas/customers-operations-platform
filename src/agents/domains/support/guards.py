@@ -50,21 +50,26 @@ REFUSALS: dict[BlockedReason, dict[Language, str]] = {
         "urdu": "رازداری کی وجہ سے میں صرف آپ کے اپنے اکاؤنٹ اور آرڈرز میں مدد کر سکتا ہوں۔ کسی اور کی معلومات میں نہیں دیکھ سکتا۔",
     },
     "prompt_injection": {
-        "english": "I can't change how I work or share internal information. I'm happy to help with your own profile, orders and spending.",
-        "roman_urdu": "Main apne rules nahi badal sakta aur andar ki maloomat share nahi kar sakta. Aap ke apne profile, orders aur kharche mein madad kar sakta hoon.",
-        "urdu": "میں اپنے اصول نہیں بدل سکتا اور اندرونی معلومات شیئر نہیں کر سکتا۔ آپ کی اپنی پروفائل، آرڈرز اور خرچ میں مدد کر سکتا ہوں۔",
+        "english": "I can't change how I work or share internal information. I'm happy to help with your own profile, orders and spending, and with company policies.",
+        "roman_urdu": "Main apne rules nahi badal sakta aur andar ki maloomat share nahi kar sakta. Aap ke apne profile, orders aur kharche, aur company ki policies mein madad kar sakta hoon.",
+        "urdu": "میں اپنے اصول نہیں بدل سکتا اور اندرونی معلومات شیئر نہیں کر سکتا۔ آپ کی اپنی پروفائل، آرڈرز اور خرچ، اور کمپنی کی پالیسیوں میں مدد کر سکتا ہوں۔",
     },
     "off_topic": {
-        "english": "I can only help with your account here: your profile, your orders and your spending.",
-        "roman_urdu": "Main yahan sirf aap ke account mein madad kar sakta hoon: profile, orders aur kharcha.",
-        "urdu": "میں یہاں صرف آپ کے اکاؤنٹ میں مدد کر سکتا ہوں: پروفائل، آرڈرز اور خرچ۔",
+        "english": "I can help here with your profile, your orders and spending, and company policies such as returns, delivery and payments.",
+        "roman_urdu": "Main yahan aap ke profile, orders aur kharche, aur company ki policies (returns, delivery, payments) mein madad kar sakta hoon.",
+        "urdu": "میں یہاں آپ کی پروفائل، آرڈرز اور خرچ، اور کمپنی کی پالیسیوں (ریٹرن، ڈیلیوری، ادائیگی) میں مدد کر سکتا ہوں۔",
+    },
+    "unclear": {
+        "english": "I'm not sure what you mean. Please tell me a little more: is it about an order, a refund, a support ticket or a company policy?",
+        "roman_urdu": "Main aap ki baat poori tarah samajh nahi saka. Thora sa aur batayein: kya ye kisi order, refund, support ticket ya company policy ke baare mein hai?",
+        "urdu": "میں آپ کی بات پوری طرح سمجھ نہیں سکا۔ تھوڑا سا اور بتائیں: کیا یہ کسی آرڈر، ریفنڈ، سپورٹ ٹکٹ یا کمپنی پالیسی کے بارے میں ہے؟",
     },
 }
 
 SAFE_FALLBACK: dict[Language, str] = {
-    "english": "Sorry, I can't confirm that from your account data. Here I can help with your profile, orders and spending; for anything else please contact the support team.",
-    "roman_urdu": "Maazrat, main ye baat aap ke account ke data se confirm nahi kar sakta. Yahan main profile, orders aur kharche mein madad kar sakta hoon; baqi cheezon ke liye support team se rabta karein.",
-    "urdu": "معذرت، میں یہ بات آپ کے اکاؤنٹ کے ڈیٹا سے تصدیق نہیں کر سکتا۔ یہاں میں پروفائل، آرڈرز اور خرچ میں مدد کر سکتا ہوں؛ باقی کے لیے سپورٹ ٹیم سے رابطہ کریں۔",
+    "english": "Sorry, I can't confirm that from your account data or our policies. Here I can help with your profile, orders and spending, and company policies; for anything else please contact the support team.",
+    "roman_urdu": "Maazrat, main ye baat aap ke account ke data ya hamari policies se confirm nahi kar sakta. Yahan main profile, orders aur kharche, aur company ki policies mein madad kar sakta hoon; baqi cheezon ke liye support team se rabta karein.",
+    "urdu": "معذرت، میں یہ بات آپ کے اکاؤنٹ کے ڈیٹا یا ہماری پالیسیوں سے تصدیق نہیں کر سکتا۔ یہاں میں پروفائل، آرڈرز اور خرچ، اور کمپنی کی پالیسیوں میں مدد کر سکتا ہوں؛ باقی کے لیے سپورٹ ٹیم سے رابطہ کریں۔",
 }
 
 

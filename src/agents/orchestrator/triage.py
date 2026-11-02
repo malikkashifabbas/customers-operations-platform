@@ -24,13 +24,13 @@ from .supervisor import FALLBACK_ROUTES
 
 logger = logging.getLogger(__name__)
 
-TRIAGE_PROMPT = Path(__file__).parent / "prompts" / "triage.v1.md"
+TRIAGE_PROMPT = Path(__file__).parent / "prompts" / "triage.v2.md"
 NO_USAGE = {"llm_calls": 0, "tokens": 0}
 TRANSCRIPT_MESSAGES = 6
 
 
 class TriageVerdict(BaseModel):
-    decision: Literal["allowed", "other_customer", "prompt_injection", "off_topic"] = Field(description="What kind of message this is.")
+    decision: Literal["allowed", "other_customer", "prompt_injection", "off_topic", "unclear"] = Field(description="What kind of message this is.")
     language: Language = Field(description="Language of the customer's latest message.")
     domains: list[str] = Field(description=f"Specialists for an allowed message, from: {', '.join(DOMAINS)}. Empty otherwise.")
 

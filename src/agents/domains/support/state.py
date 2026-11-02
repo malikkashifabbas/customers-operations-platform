@@ -5,7 +5,7 @@ from typing import Literal, TypedDict
 from langgraph.graph import MessagesState
 
 Language = Literal["english", "roman_urdu", "urdu"]
-BlockedReason = Literal["other_customer", "prompt_injection", "off_topic"]
+BlockedReason = Literal["other_customer", "prompt_injection", "off_topic", "unclear"]
 
 
 class GuardUsage(TypedDict):

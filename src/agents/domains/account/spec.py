@@ -10,7 +10,7 @@ from agents.domains.support.graph import _capabilities
 from agents.domains.support.guards import REPLY_LANGUAGE
 from agents.domains.support.tools import get_my_profile
 
-SYSTEM_PROMPT = Path(__file__).parent / "prompts" / "system.v1.md"
+SYSTEM_PROMPT = Path(__file__).parent / "prompts" / "system.v2.md"
 TOOLS = [get_my_profile]
 
 

@@ -71,7 +71,7 @@ def _search_calls(queries: list[str], prefix: str) -> AIMessage:
 
 
 def generate_query_or_respond(state: KnowledgeState, runtime: Runtime[SupportContext]) -> dict:
-    prompt = load_prompt(PROMPTS / "query.v3.md", company_name=runtime.context.tenant.name)
+    prompt = load_prompt(PROMPTS / "query.v4.md", company_name=runtime.context.tenant.name)
     # A form, not bind_tools: given the tool, the model asked one thing of a two-part question (0/5 on the express test).
     llm = get_chat_model().with_structured_output(SearchPlan, include_raw=True)
     # Only a short transcript, not the full history: earlier turns hold other specialists' tool calls.
@@ -116,7 +116,7 @@ def rewrite_question(state: KnowledgeState) -> dict:
 def generate_answer(state: KnowledgeState, runtime: Runtime[SupportContext]) -> dict:
     today = datetime.now(ZoneInfo("Asia/Karachi")).strftime("%d %B %Y")
     prompt = load_prompt(
-        PROMPTS / "answer.v2.md",
+        PROMPTS / "answer.v3.md",
         company_name=runtime.context.tenant.name,
         today=today,
         reply_language=REPLY_LANGUAGE[state.get("language", "english")],
