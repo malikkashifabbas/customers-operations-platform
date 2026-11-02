@@ -36,6 +36,7 @@ class Env(BaseSettings):
     orchestrator_triage: bool = True  # one triage call instead of guard_input + supervisor
     rag_search_limit: int = 3  # chunks per policy search (was 5)
     rag_skip_confident_grade: bool = True  # skip the LLM grade when vector and keyword search agree on the top chunk
+    chat_history_max_tokens: int = 2000  # earlier conversation a specialist sees; the current turn is always kept
 
     # LangSmith tracing (cloud); off unless LANGSMITH_TRACING=true and a key is set.
     langsmith_tracing: bool = False

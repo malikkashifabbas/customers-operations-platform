@@ -5,7 +5,8 @@ Guards, refusal and the output-guard rewrite rules are reused from agents/domain
 
 from pathlib import Path
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage, trim_messages
+from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import Send
@@ -64,8 +65,22 @@ def specialist(spec: DomainSpec):
     return run
 
 
+def _specialist_history(messages: list[BaseMessage]) -> list[BaseMessage]:
+    """This turn plus the newest earlier conversation; old tool results stay out, a specialist can simply call its tool again."""
+    turn = _this_turn(messages)
+    earlier = [
+        m for m in messages[: len(messages) - len(turn)]
+        if isinstance(m, HumanMessage) or (isinstance(m, AIMessage) and m.content and not m.tool_calls)
+    ]
+    # A long conversation otherwise grows past the model's request limit (413 at 10,009 tokens on Groq's 8,000 per minute).
+    kept = trim_messages(
+        earlier, max_tokens=env.chat_history_max_tokens, token_counter=count_tokens_approximately, strategy="last", start_on="human"
+    )
+    return [*kept, *turn]
+
+
 def route_to_domains(state: OrchestratorState) -> list[Send]:
-    payload = {"messages": state["messages"], "language": state.get("language", "english")}
+    payload = {"messages": _specialist_history(state["messages"]), "language": state.get("language", "english")}
     return [Send(name, payload) for name in state["routes"]]
 
 

@@ -1413,6 +1413,23 @@ Isi eval mein *"My earrings arrived broken yesterday"* fail hua: jawab mein 48 g
 
 Ye ghalti khatarnak thi: jawab "haan, wapas kar sakte hain" sahi lagta tha, lekin deadline chhoot jati aur customer ka haq chala jata. Eval ne ye is liye pakda ke woh `48` dhoondta hai.
 
-**Evals:** lesson15 **19/19**, lesson14 **7/7**. Lesson 12 aur 13 in RAG aur tracing changes ke baad dobara nahi chalaye. `optimized-v2` ke numbers bhi dobara nahi naape; extra chunk se tokens thore barh sakte hain.
+**Evals:** lesson15 **19/19**, lesson14 **7/7**, lesson13 **4/4**. Lesson 12 adhoora: pehle 7 pass hue, phir Groq ki daily limit (200k) khatam ho gayi; ye limit ~139 tokens per minute ki raftaar se wapas bharti hai. `optimized-v2` ke numbers bhi dobara nahi naape; extra chunk se tokens thore barh sakte hain.
 
 **Kaise check karein:** relay, worker aur runserver restart karo, `LANGSMITH_TRACING=true` rakho, ticket banao, LangSmith mein `POST /tickets` kholo. Tafseel: `docs/walkthroughs/kafka_trace_context.md`.
+
+### Lambi baat-cheet ka 413: testing se mili asli ghalti (2 Nov 2026)
+Postman se ek hi `conversationId` par 20 se zyada sawal puche, phir `orders` bheja to `503`. Asal error Groq ka **413 Request too large: Requested 10009, Limit 8000**. Ye 429 se alag hai: 429 mein ruk kar dobara koshish chal jati hai, 413 mein request hi limit se bari hai, is liye na retry kaam aata hai aur na nayi API key.
+
+**LangSmith se wajah mili:** `agent` LLM run ko poore **73 messages** gaye the, jin mein purane sawalon ke search results aur tool calls bhi the. Baqi nodes pehle se chhota transcript lete the; billing aur account agents ko poori history jati thi.
+
+**Fix:** `_specialist_history` (`orchestrator/graph.py`): is turn ke messages poore, purani baat-cheet sirf sawal aur final jawab, aur `trim_messages` se sab se nayi **2,000 tokens** (`CHAT_HISTORY_MAX_TOKENS`). Purane tool results ki zaroorat nahi: specialist tool dobara chala sakta hai, aur is se data bhi taaza milta hai. Checkpointer mein poori history mehfooz rehti hai; sirf LLM ko kam jata hai.
+
+| | Pehle | Baad mein |
+|---|---|---|
+| Specialist ko messages | 72 | 37 |
+| Andazan tokens | 9,567 | 1,328 |
+| `orders` | 503 | 200 |
+
+Follow-up (`which one failed and why?`, `and can I return earrings?`) ab bhi sahi samajhte hain. Lesson 13 bhi dobara chalaya.
+
+**Doosra sabaq, slow request:** server restart ke baad pehla policy sawal 11.1s laga, jis mein `search_policies` akela 6.28s tha, jabke baad ke sawal ~4s. Sab se mumkin wajah embedding model ka pehli dafa load hona hai. Demo se pehle ek sawal chala kar system garam kar lein.
