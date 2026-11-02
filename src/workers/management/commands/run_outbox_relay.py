@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from infra.eventbus.kafka import make_producer
 from infra.eventbus.models import OutboxEvent
+from infra.observability.tracing import record_span
 
 BATCH_SIZE = 100
 
@@ -46,6 +47,7 @@ class Command(BaseCommand):
                     row.topic,
                     key=row.key,
                     value=json.dumps(row.payload).encode(),
+                    headers=row.headers,
                     on_delivery=lambda err, msg, row_id=row.id: failed.add(row_id) if err else None,
                 )
             producer.flush(15)
@@ -57,4 +59,5 @@ class Command(BaseCommand):
             for row in batch:
                 if row.id in delivered:
                     self.stdout.write(f"  -> {row.topic} key={row.key}")
+                    record_span("outbox wait", parent=row.headers, start_time=row.created_at, metadata={"topic": row.topic})
             return len(delivered)

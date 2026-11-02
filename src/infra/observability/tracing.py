@@ -1,10 +1,16 @@
 """LLM tracing to LangSmith (cloud). Off unless LANGSMITH_TRACING=true.
 
-Callers only ever use trace_config(), flush() and langsmith_client(); nothing else in the code knows LangSmith exists.
+Callers only ever use trace_config(), flush(), langsmith_client() and the span helpers; nothing else in the code knows LangSmith exists.
+
+Lesson 16C: one ticket is one trace across processes. The API span's headers travel outbox -> relay -> Kafka -> worker.
 """
 
+import logging
 import os
 import re
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from datetime import datetime
 from functools import lru_cache
 from typing import Any
 
@@ -13,6 +19,7 @@ from config.env import env
 PHONE_RE = re.compile(r"\+?\d[\d\s-]{8,}\d")
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 CNIC_RE = re.compile(r"\b\d{5}-\d{7}-\d\b")
+logger = logging.getLogger(__name__)
 
 
 def mask(data: Any) -> Any:
@@ -65,6 +72,72 @@ def trace_config(
         # LangSmith "Threads" group runs by session_id; LangGraph also adds the checkpointer thread_id by itself.
         "metadata": {**config.get("metadata", {}), "session_id": session_id, "user_id": user_id, "tenant": tenant, "channel": channel},
     }
+
+
+def _parent_run(headers: Mapping | None, client, **kwargs):
+    """The remote parent run, or None: a bad or missing header starts a new trace and must never stop the work."""
+    if not headers:
+        return None
+    from langsmith import RunTree
+
+    try:
+        return RunTree.from_headers(dict(headers), client=client, project_name=env.langsmith_project, **kwargs)
+    except Exception:
+        logger.warning("ignoring bad trace headers", exc_info=True)
+        return None
+
+
+@contextmanager
+def trace_span(name: str, *, parent: Mapping | None = None, metadata: dict | None = None) -> Iterator[None]:
+    """One named step of the trace; LLM runs and events published inside it become its children."""
+    client = langsmith_client()
+    if client is None:
+        yield
+        return
+    from langsmith import run_helpers
+
+    # tracing_context: the .env flag never reaches os.environ, so LangSmith must be told it is on.
+    with run_helpers.tracing_context(enabled=True, client=client, project_name=env.langsmith_project):
+        with run_helpers.trace(
+            name, client=client, project_name=env.langsmith_project, parent=_parent_run(parent, client), metadata=metadata
+        ):
+            yield
+
+
+def label_span(**metadata: str) -> None:
+    """Add labels to the current span, for values only known after it started (the new ticket's id)."""
+    if langsmith_client() is None:
+        return
+    from langsmith import run_helpers
+
+    run = run_helpers.get_current_run_tree()
+    if run is not None:
+        run.add_metadata(metadata)
+
+
+def current_trace_headers() -> dict[str, str]:
+    """Headers that let another process continue the current span's trace; empty when there is no span."""
+    if langsmith_client() is None:
+        return {}
+    from langsmith import run_helpers
+
+    run = run_helpers.get_current_run_tree()
+    return run.to_headers() if run is not None else {}
+
+
+def record_span(name: str, *, parent: Mapping | None, start_time: datetime, metadata: dict | None = None) -> None:
+    """A finished step measured from the outside (time spent waiting in a queue); needs a parent to attach to."""
+    client = langsmith_client()
+    # A remote parent's start time is a placeholder (now), and LangSmith moves a child that starts before its parent up to it.
+    remote_parent = _parent_run(parent, client, start_time=start_time) if client is not None else None
+    if remote_parent is None:
+        return
+    try:
+        run = remote_parent.create_child(name=name, run_type="chain", start_time=start_time, extra={"metadata": metadata or {}})
+        run.end()
+        run.post()
+    except Exception:
+        logger.warning("could not record span %s", name, exc_info=True)
 
 
 def flush() -> None:

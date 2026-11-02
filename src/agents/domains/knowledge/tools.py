@@ -1,5 +1,7 @@
 """The retriever tool: hybrid (meaning + keyword) search over the current tenant's policy documents."""
 
+import re
+
 from langchain.tools import ToolRuntime, tool
 
 from agents.domains.support.context import SupportContext
@@ -7,10 +9,14 @@ from apps.knowledge.selectors import hybrid_search_chunks
 from config.env import env
 from infra.llm.embeddings import embed_query
 
+# Every document title says "Policy", so the word only pushes the specific section out of the top results.
+FILLER_WORDS = re.compile(r"\b(?:policy|policies)\b", re.IGNORECASE)
+
 
 @tool(response_format="content_and_artifact")
 def search_policies(query: str, runtime: ToolRuntime[SupportContext]) -> tuple[str, dict]:
     """Search this company's policy documents: returns and refunds, delivery or shipping, payments and installments, account and privacy, contact and support hours, warranty, FAQ. Use short English keyword queries."""
+    query = " ".join(FILLER_WORDS.sub(" ", query).split()) or query
     # The tenant comes from runtime.context, so one company's policies can never answer another company's customer.
     chunks = hybrid_search_chunks(
         tenant=runtime.context.tenant, query=query, query_embedding=embed_query(query), limit=env.rag_search_limit

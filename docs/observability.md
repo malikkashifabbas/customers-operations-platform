@@ -47,6 +47,24 @@ always shows what was different. Switches come from `.env` or env vars:
 Token counts are not affected. Always re-run the evals after a change (`lesson15_eval.py`, `lesson14_eval.py`,
 `lesson12_eval.py`): a faster answer that is wrong is not an improvement.
 
+## 3B. One ticket, one trace (Lesson 16C)
+
+A ticket crosses three processes, yet it is one trace. The API span's headers (`langsmith-trace`, `baggage`) are saved on
+the outbox row, the relay puts them on the Kafka message, and the worker continues from them:
+
+```
+POST /tickets                      API process
+├─ outbox wait                     created_at → Kafka confirmed (relay)
+├─ kafka wait                      Kafka timestamp → worker picked it up
+└─ consume tickets.created         one span per attempt (worker)
+   └─ support-ticket               the LangGraph run: triage, specialists, LLM, tools
+```
+
+A slow ticket now tells you where the time went: a long `outbox wait` means the relay is down or behind, a long
+`kafka wait` means workers are behind, a long `support-ticket` means the LLM. The staff decision starts a **new trace**
+(it can come hours later); `session_id = ticket-<public_id>` joins both in one Thread. A missing or bad header starts a
+new trace and never stops the work. Full explanation: `docs/walkthroughs/kafka_trace_context.md`.
+
 ## 4. Personal data
 
 `infra/observability/tracing.py` passes a masking function to LangSmith's `hide_inputs` / `hide_outputs`: phone numbers,
@@ -61,6 +79,7 @@ self-hosted (enterprise) deployment; the code only needs a different `LANGSMITH_
   with masking), a run name, tags and metadata to the LangGraph config; `flush()` waits for pending traces in scripts;
   `langsmith_client()` is used for datasets and experiments.
 - Called from `apps/chat/services.py` (`_prepare`) and `workers/handlers/tickets.py` (`_run`).
+- Span helpers (16C): `trace_span`, `record_span`, `label_span`, `current_trace_headers`; used by `apps/tickets/api.py`, `staff_api.py`, `infra/eventbus/outbox.py`, `run_outbox_relay` and `run_agent_worker`.
 - Inside `client.evaluate()` LangChain traces by itself (nested under the experiment row), so the benchmark adds no tracer.
 - Gotchas: pydantic-settings reads `.env` into `Env`, not into `os.environ` (the client gets its key passed in, and the key
   is also exported for runs started by `evaluate()`); `client.list_runs()` / `get_run_url()` are deprecated in favour of

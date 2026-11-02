@@ -127,6 +127,21 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `init_chat_model(..., timeout=env.llm_timeout_seconds)` | ChatGroq ka default timeout **None** hai: bina iske stalled call hamesha atki rehti hai | `infra/llm/gateway.py` |
 | Groq headers `x-ratelimit-limit-tokens` / `-requests` | Free tier: 8000 tokens/min, 200k tokens/day, 1000 requests/day | — |
 
+### 1G. Kafka trace context (Lesson 16C)
+
+| Code | Kya karta hai | Kahan |
+|---|---|---|
+| `with trace_span("POST /tickets", metadata=...):` | Trace ka ek step; andar ke LLM runs aur events is ke bachche | `infra/observability/tracing.py`, `apps/tickets/api.py` |
+| `current_trace_headers()` → `run.to_headers()` | `langsmith-trace` + `baggage`: doosre process ke liye "tracking number" | tracing.py, `infra/eventbus/outbox.py` |
+| `OutboxEvent.headers` → `producer.produce(..., headers=row.headers)` | Headers API se relay tak row mein, phir Kafka message par | `run_outbox_relay.py` |
+| `trace_span(f"consume {topic}", parent=trace_headers)` | Worker usi trace mein judta hai; har attempt ka alag span | `run_agent_worker.py` |
+| `record_span("outbox wait", parent=..., start_time=row.created_at)` | Bahar se naapa hua waqt (queue mein intezar) | tracing.py |
+| `RunTree.from_headers(headers, start_time=...)` | Remote parent. Bina `start_time` ke wait hamesha 0.00s (child parent se pehle shuru nahi ho sakta) | tracing.py |
+| `{**dict(msg.headers() or []), "dlq_reason": reason}` | DLQ mein bhi trace headers | `run_agent_worker.py` |
+| `session_id = ticket-<public_id>` | Trace = ek silsila; Thread = ek ticket ke saare silsile | `staff_api.py` |
+| `best.append(by_meaning[0].id)` | Meaning ka rank 1 hamesha result mein, limit ke upar ek jagah | `apps/knowledge/selectors.py` |
+| `FILLER_WORDS` (`policy`, `policies`) | Query se wo lafz hatao jo har document mein hai | `agents/domains/knowledge/tools.py` |
+
 ---
 
 ## 2. Kafka (dak-khana / post office)

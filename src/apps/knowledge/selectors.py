@@ -57,6 +57,9 @@ def hybrid_search_chunks(*, tenant: Tenant, query: str, query_embedding: list[fl
             chunks.setdefault(chunk.id, chunk)
             ranks.setdefault(chunk.id, {})[source] = rank
     best = sorted(scores, key=scores.get, reverse=True)[:limit]
+    # RRF sinks a chunk only one search finds ("deliver" and "delivery" stem differently), so the closest meaning gets an extra place.
+    if by_meaning and by_meaning[0].id not in best:
+        best.append(by_meaning[0].id)
     for chunk_id in best:
         # Rank per search ({"meaning": 1, "words": 3}): callers can tell how sure the search is.
         chunks[chunk_id].ranks = ranks[chunk_id]

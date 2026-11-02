@@ -6,6 +6,7 @@ from ninja import Router
 
 from core.staff import StaffHeaders
 from core.tenancy import TenantHeader
+from infra.observability.tracing import trace_span
 
 from . import selectors, services
 from .schemas import ApprovalIn, StaffTicketOut
@@ -34,5 +35,10 @@ def list_waiting_approval(request):
 @router.post("/{public_id}/decision", response={202: StaffTicketOut}, openapi_extra=TENANT_HEADER_DOCS)
 def decide(request, public_id: UUID, payload: ApprovalIn):
     ticket = selectors.get_ticket_for_staff(tenant=request.auth.tenant, public_id=public_id)
-    ticket = services.decide_approval(ticket=ticket, approved=payload.approved, note=payload.note, reviewer=payload.reviewer)
+    # A new trace, not the ticket's first one: staff may decide hours later, and session_id links both in one Thread.
+    with trace_span(
+        "POST /staff/tickets/decision",
+        metadata={"tenant": request.auth.tenant.slug, "session_id": f"ticket-{public_id}", "ticket_public_id": str(public_id)},
+    ):
+        ticket = services.decide_approval(ticket=ticket, approved=payload.approved, note=payload.note, reviewer=payload.reviewer)
     return 202, ticket

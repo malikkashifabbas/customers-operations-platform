@@ -1379,3 +1379,40 @@ Senior ka faisla: practice project mein data farzi hai, isliye cloud theek hai, 
 **Slowness ka sabaq:** bhare token bucket par ek sawal 7.4s (4 calls, 4,136 tokens, koi 429 nahi). Peeche peeche chalane par 8,000 tokens/minute ka bucket khali ho gaya (`remaining-tokens=518`) aur har koshish minuton mein poori hui. Is liye repeat tests mein pause zaroori hai.
 
 **Timeout bug pakda:** lesson15 ka ek run 11 minute se zyada ek sawal par atka raha (ek HTTPS connection khuli, koi output nahi). `ChatGroq` khud timeout nahi lagata (`groq client timeout: None`), yani stalled call hamesha atki reh sakti hai. Fix: `LLM_TIMEOUT_SECONDS=60` gateway mein. Fix ke baad us run mein koi atkao nahi aaya; hang ki wajah 100% sabit nahi hui, kyunki atki call ka stack nahi dekha ja saka.
+
+## Learning 27 ⭐: Ek ticket, ek trace — Kafka headers mein trace context (16C), aur do RAG ghaltiyan
+
+**Masla:** ticket teen processes se guzarta hai (API, relay, worker). LangSmith mein sirf worker ka LLM hissa dikhta tha, is liye ye pata nahi chalta tha ke waqt queue mein laga ya LLM mein.
+
+**Hal:** courier ka tracking number. API span ke headers (`langsmith-trace`, `baggage`) outbox row mein save hote hain, relay unhein Kafka message par lagata hai, worker wahin se trace aage badhata hai. Ek asli refund ticket ka trace:
+
+| Span | Waqt | Matlab |
+|---|---|---|
+| `POST /tickets` | 0.34s | API |
+| `outbox wait` | 1.07s | Relay har 1 second baad dekhta hai |
+| `kafka wait` | 0.06s | Worker khali tha |
+| `consume tickets.created` → `support-ticket` | 3.05s → 2.74s | Agent |
+
+**Yaad rakhne wali baatein:**
+1. **Trace ≠ Thread.** Trace ek silsila hai; Thread ek ticket ke saare silsile. Staff ka faisla ghanton baad aa sakta hai, is liye wo naya trace hai, `session_id` same.
+2. **Headers metadata hain, payload nahi.** Payload ka versioned schema business data ke liye hai. Outbox mein alag column isliye ke API aur relay alag process hain.
+3. **Tracing kabhi kaam nahi rokti (fail-open).** Kharab ya ghair-mojood header par naya trace; tracing off par kuch nahi. Exception span se guzar kar worker tak pahunchti hai, warna retry aur DLQ toot jate.
+4. **OpenTelemetry (OTel) kyun nahi?** Senior ka faisla LangSmith hai aur OTel ka koi backend nahi chal raha. Sab `tracing.py` mein band hai, is liye W3C `traceparent` par jana baad mein ek file ka kaam hai.
+
+**Gotcha jo test ne pakda:** pehle `outbox wait` hamesha 0.00s aaya. `from_headers` wale parent ka start time "abhi" hota hai, aur LangSmith parent se pehle shuru hone wale child ko aage khiska deta hai. Parent ko bhi wahi `start_time` dene se theek hua. Sabaq: trace ban jana kaafi nahi, us ke numbers bhi dekho.
+
+### Dubai fix: RRF ki kamzori
+*"Can you deliver my order to Dubai?"* fail hota tha. Meaning search §1 *Where we deliver* ko **rank 1** par lati thi, phir bhi wo top 3 se bahar tha:
+- Postgres ka stemmer `delivery` ko `deliveri` aur `deliver` ko `deliv` banata hai, to keyword search ko §1 mila hi nahi.
+- RRF (Reciprocal Rank Fusion) mein ek search ka rank 1 (1/61 = 0.0164) do searches ke kamzor ranks (1/64 + 1/63 = 0.0315) se haar jata hai.
+
+Pehli soch: aakhri result hata kar §1 rakho. Bina LLM ke naapa to NimbusTech ke `express delivery cost` se sahi section (`Shipping times and costs`) hi nikal gaya. **Is liye aakhri result hataya nahi, ek extra jagah di.** Pehle wale results wahi rehte hain, to koi naya nuqsan nahi; kharcha ek chunk. Nateeja: Dubai 5/5, London, Saudi Arabia aur Roman Urdu bhi pass.
+
+### Earrings fix: ek filler lafz
+Isi eval mein *"My earrings arrived broken yesterday"* fail hua: jawab mein 48 ghante ki shart nahi thi. Dobara chalaya to **1/6**, yani ye ittefaq nahi tha. Query writer `broken earrings return policy` likhta hai, aur `policy` har document ke title mein hai; is lafz se *Damaged, faulty* section top 3 se nikal jata tha. Ye Dubai fix ki wajah se nahi tha: us query mein extra jagah kuch badalti hi nahi. Prompt par bharosa karne ke bajaye **code** `search_policies` mein `policy` hata deta hai. Nateeja: 4/4.
+
+Ye ghalti khatarnak thi: jawab "haan, wapas kar sakte hain" sahi lagta tha, lekin deadline chhoot jati aur customer ka haq chala jata. Eval ne ye is liye pakda ke woh `48` dhoondta hai.
+
+**Evals:** lesson15 **19/19**, lesson14 **7/7**. Lesson 12 aur 13 in RAG aur tracing changes ke baad dobara nahi chalaye. `optimized-v2` ke numbers bhi dobara nahi naape; extra chunk se tokens thore barh sakte hain.
+
+**Kaise check karein:** relay, worker aur runserver restart karo, `LANGSMITH_TRACING=true` rakho, ticket banao, LangSmith mein `POST /tickets` kholo. Tafseel: `docs/walkthroughs/kafka_trace_context.md`.

@@ -1,6 +1,7 @@
 """Agent worker: consume ticket events (created, approval_decided), run the support agent, commit only when done."""
 
 import time
+from datetime import UTC, datetime
 
 from django.core.management.base import BaseCommand
 from pydantic import ValidationError
@@ -14,6 +15,7 @@ from infra.eventbus.topics import (
     TICKETS_CREATED,
     TICKETS_CREATED_DLQ,
 )
+from infra.observability.tracing import record_span, trace_span
 from workers.handlers.tickets import PermanentEventError, handle_approval_decided, handle_ticket_created, mark_failed
 
 GROUP_ID = "agent-workers"
@@ -62,10 +64,23 @@ class Command(BaseCommand):
             self.stdout.write(f"[{where}] event {event.event_id[:8]} already processed -> skipping")
             return
 
+        trace_headers = {key: value.decode(errors="replace") for key, value in msg.headers() or [] if value}
+        _, sent_at_ms = msg.timestamp()
+        if sent_at_ms > 0:  # Kafka reports -1 when a message has no timestamp
+            record_span(
+                "kafka wait", parent=trace_headers, start_time=datetime.fromtimestamp(sent_at_ms / 1000, UTC), metadata={"topic": msg.topic()}
+            )
+
         for attempt in range(1, MAX_ATTEMPTS + 1):
             started = time.perf_counter()
             try:
-                outcome = handler(event)
+                # One span per attempt, so a failed try stays visible in the trace next to the one that worked.
+                with trace_span(
+                    f"consume {msg.topic()}",
+                    parent=trace_headers,
+                    metadata={"attempt": attempt, "partition": msg.partition(), "offset": msg.offset(), "event_id": event.event_id},
+                ):
+                    outcome = handler(event)
                 self.stdout.write(self.style.SUCCESS(
                     f"[{where}] ticket {event.ticket_public_id[:8]} {outcome} in {time.perf_counter() - started:.1f}s"
                 ))
@@ -85,6 +100,7 @@ class Command(BaseCommand):
 
     def to_dlq(self, dlq, msg, reason: str) -> None:
         dlq_topic = ROUTES[msg.topic()][2]
-        dlq.produce(dlq_topic, key=msg.key(), value=msg.value(), headers={"dlq_reason": reason})
+        # Keep the trace headers: a dead event can then be followed back to the request that created it.
+        dlq.produce(dlq_topic, key=msg.key(), value=msg.value(), headers={**dict(msg.headers() or []), "dlq_reason": reason})
         dlq.flush(10)
         self.stderr.write(self.style.WARNING(f"sent to {dlq_topic}: {reason}"))
