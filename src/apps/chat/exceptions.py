@@ -13,6 +13,18 @@ class ConversationBusy(DomainError):
     message = "The previous message in this conversation is still being answered."
 
 
+class ConfirmationPending(DomainError):
+    code = "CONFIRMATION_PENDING"
+    status_code = 409
+    message = "Please confirm or cancel the waiting action first, with POST /api/chat/confirm."
+
+
+class NothingToConfirm(DomainError):
+    code = "NOTHING_TO_CONFIRM"
+    status_code = 409
+    message = "Nothing in this conversation is waiting for confirmation."
+
+
 class RateLimited(DomainError):
     code = "RATE_LIMITED"
     status_code = 429

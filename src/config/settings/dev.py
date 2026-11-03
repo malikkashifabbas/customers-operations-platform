@@ -8,3 +8,6 @@ SECRET_KEY = 'django-insecure-)d&sfdgu6c86vrx#*bt*_@w%t9zl!z%))fa22+ln%0n4*ij#c@
 DEBUG = True
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+
+# No mail server locally: emails print in the runserver terminal.
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

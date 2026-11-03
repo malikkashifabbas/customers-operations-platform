@@ -166,6 +166,34 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `uv run src/manage.py seed_data` | Demo passwords `DEMO_PASSWORD` se; staff `staff.demo-company` | `devtools` |
 | `uv run src/manage.py list_ids` | Login ke liye tenant id, phones, staff usernames | `devtools` |
 
+### 1I. Agent ke write kaam — confirmation (Lesson 18A)
+
+| Code | Kya karta hai | Kahan |
+|---|---|---|
+| `decision = interrupt({"type": "ticket_confirmation", ...})` | Graph rukta hai; resume par tool upar se dobara chalta hai | `agents/domains/tickets/tools.py` |
+| `graph.get_state(config).interrupts` | Kya koi kaam ruka hua hai | `apps/chat/services.py` |
+| `Command(resume={pending.id: {"approved": True}})` | Customer ka faisla; id se, taa ke do pause ek ek karke hon | `apps/chat/services.py` |
+| `POST /api/chat/confirm` `{conversation_id, approved}` | Haan ya na; LLM nahi, API aur code | `apps/chat/api.py` |
+| `status`, `pending_action` | Chat ke jawab mein: ruka hai ya nahi, kya hoga | `apps/chat/schemas.py` |
+| SSE `confirmation_required` | Streaming mein wahi baat | `apps/chat/services.py` |
+| `record_action(...)` + `AgentAction` | Audit: confirmed, cancelled, blocked | `apps/agent_actions/` |
+| `ticket_done` in `check_output` | Is turn ke tool result ke bagair "ticket bana diya" flag | `agents/domains/support/guards.py` |
+| `uv run python playground/lesson18_eval.py` | 9 asli sawal, tickets khud saaf | playground |
+
+### 1J. Naam aur email — company ki policy ke saath (Lesson 18B)
+
+| Code | Kya karta hai | Kahan |
+|---|---|---|
+| `Tenant.agent_can_edit_profile` | Company ka switch: Demo Company on, NimbusTech off | `core/models/tenant.py` |
+| `_not_allowed(context)` | Switch tool ke andar bhi check: ToolNode har tool chala sakta hai | `agents/domains/account/tools.py` |
+| `update_my_name`, `request_email_change` | Pause, phir kaam; audit ke saath | `agents/domains/account/tools.py` |
+| `earlier_result(runtime)`, `finish(runtime, ...)` | Har write tool: ek tool call par ek dafa, result audit mein | `agents/core/write_actions.py` |
+| `tokens.mint(claims, tokens.EMAIL_CHANGE)` | 24 ghante ka signed link; `type` ki wajah se login token nahi ban sakta | `apps/accounts/services/email_change.py` |
+| `GET /api/auth/email/confirm?token=` | Link khulne par email badalta hai; ek hi dafa | `apps/accounts/api.py` |
+| `Command(resume=answer)` | Ek pause: seedha jawab. Redis par pakka | `apps/chat/services.py` |
+| `Command(resume={id: answer})` + retry | Kai pause: Redis pehli dafa aksar gira deta hai | `_resume` in `apps/chat/services.py` |
+| `CONTACT_CHANGE_RE` | "Mera email x kar do" doosre customer ka sawal nahi | `agents/domains/support/guards.py` |
+
 ---
 
 ## 2. Kafka (dak-khana / post office)

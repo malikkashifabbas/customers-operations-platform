@@ -13,6 +13,7 @@ from .schemas import (
     ChangePasswordIn,
     CustomerLoginIn,
     CustomerSignupIn,
+    EmailChangedOut,
     LogoutIn,
     MeOut,
     RefreshIn,
@@ -67,6 +68,11 @@ def change_password(request, payload: ChangePasswordIn):
 def logout(request, payload: LogoutIn):
     services.log_out(principal=request.auth, refresh_token=payload.refresh_token)
     return 204, None
+
+
+@router.get("/email/confirm", response=EmailChangedOut)
+def confirm_email(request, token: str):
+    return {"status": "email_updated", "email": services.confirm_email_change(token=token)}
 
 
 @router.get("/me", response=MeOut, auth=[CustomerJWT(), StaffJWT()])

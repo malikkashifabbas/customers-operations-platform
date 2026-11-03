@@ -10,16 +10,22 @@ import jwt
 from django.core.exceptions import ImproperlyConfigured
 
 from config.env import env
-from core.limits import ACCESS_TOKEN_MINUTES, REFRESH_TOKEN_DAYS
+from core.limits import ACCESS_TOKEN_MINUTES, EMAIL_CHANGE_TOKEN_HOURS, REFRESH_TOKEN_DAYS
 from infra.cache import token_denylist
 
 ALGORITHM = "HS256"
 ISSUER = "opspilot"
 ACCESS = "access"
 REFRESH = "refresh"
+EMAIL_CHANGE = "email_change"
 ROLE_CUSTOMER = "customer"
 ROLE_STAFF = "staff"
 ACCESS_TOKEN_SECONDS = ACCESS_TOKEN_MINUTES * 60
+LIFETIMES = {
+    ACCESS: timedelta(minutes=ACCESS_TOKEN_MINUTES),
+    REFRESH: timedelta(days=REFRESH_TOKEN_DAYS),
+    EMAIL_CHANGE: timedelta(hours=EMAIL_CHANGE_TOKEN_HOURS),
+}
 
 
 def _secret() -> str:
@@ -30,8 +36,7 @@ def _secret() -> str:
 
 def mint(claims: dict, token_type: str) -> str:
     now = datetime.now(UTC)
-    lifetime = timedelta(minutes=ACCESS_TOKEN_MINUTES) if token_type == ACCESS else timedelta(days=REFRESH_TOKEN_DAYS)
-    payload = {**claims, "type": token_type, "iss": ISSUER, "iat": now, "exp": now + lifetime, "jti": uuid.uuid4().hex}
+    payload = {**claims, "type": token_type, "iss": ISSUER, "iat": now, "exp": now + LIFETIMES[token_type], "jti": uuid.uuid4().hex}
     return jwt.encode(payload, _secret(), algorithm=ALGORITHM)
 
 

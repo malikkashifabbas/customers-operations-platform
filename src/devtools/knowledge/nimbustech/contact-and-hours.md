@@ -14,7 +14,7 @@ There are no special Ramadan hours. Support is closed on public holidays and for
 
 ## 2. How to reach us and open a support ticket
 
-- **Support tickets:** to open, raise or create a ticket, write a subject and a description of your issue from your account. Staff reply within **12 business hours**.
+- **Support tickets:** to open, raise or create a ticket, write a subject and a description of your issue from your account, or ask the chat assistant to open it for you. Staff reply within **12 business hours**.
 - **Email:** help@nimbustech.example — replies within 1 business day.
 - **Phone:** +92-42-0000-5678, Monday to Friday only (not on Saturdays).
 - **Repair centre:** Lahore, by appointment only for warranty repairs (book through a support ticket).

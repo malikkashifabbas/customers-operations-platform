@@ -24,7 +24,7 @@ from .supervisor import FALLBACK_ROUTES
 
 logger = logging.getLogger(__name__)
 
-TRIAGE_PROMPT = Path(__file__).parent / "prompts" / "triage.v2.md"
+TRIAGE_PROMPT = Path(__file__).parent / "prompts" / "triage.v4.md"
 NO_USAGE = {"llm_calls": 0, "tokens": 0}
 TRANSCRIPT_MESSAGES = 6
 

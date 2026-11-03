@@ -55,6 +55,11 @@ class AccessTokenOut(Schema):
     expires_in: int
 
 
+class EmailChangedOut(Schema):
+    status: str
+    email: str
+
+
 class MeOut(Schema):
     role: str
     name: str

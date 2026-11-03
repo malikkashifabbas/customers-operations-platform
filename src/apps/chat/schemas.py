@@ -9,6 +9,11 @@ class ChatIn(Schema):
     conversation_id: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 
+class ConfirmIn(Schema):
+    conversation_id: str = Field(max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    approved: bool
+
+
 class ToolCallOut(Schema):
     name: str
     args: dict
@@ -27,3 +32,6 @@ class ChatOut(Schema):
     output_retries: int = 0
     # Which domain specialists the supervisor picked (empty when the input guard refused).
     routes: list[str] = []
+    # "confirmation_required": nothing changed yet; pending_action shows what POST /api/chat/confirm would do.
+    status: str = "answered"
+    pending_action: dict | None = None

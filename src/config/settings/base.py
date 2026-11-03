@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'apps.orders',
     'apps.chat',
     'apps.tickets',
+    'apps.agent_actions',
     'apps.knowledge',
     'infra.eventbus',
     'workers',
@@ -134,3 +135,5 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+DEFAULT_FROM_EMAIL = 'no-reply@opspilot.example'

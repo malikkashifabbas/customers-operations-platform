@@ -26,6 +26,8 @@ EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 PHONE_RE = re.compile(r"\+?\d[\d\s-]{7,}\d")
 URL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
 ORDER_RE = re.compile(r"\bORD-\d+\b", re.IGNORECASE)
+# A new email in "change my email to x" is not another person; the LLM triage and the tools still check the rest.
+CONTACT_CHANGE_RE = re.compile(r"\b(change|update|correct|replace|new|naya|nayi|badal\w*|tabdeel)\b.*\b(e-?mail|phone|number|mobile)\b|\b(e-?mail|phone|number|mobile)\b.*\b(change|update|correct|replace|new|naya|nayi|badal\w*|tabdeel)\b", re.IGNORECASE)
 
 # Lower-case; first-person claims only, so "order ORD-1 was refunded" (a real status) stays allowed.
 BANNED_PHRASES = (
@@ -35,6 +37,10 @@ BANNED_PHRASES = (
     "i have escalated", "i've escalated", "i will escalate", "i'll escalate",
     "i have sent", "i've sent", "i will send", "i'll send",
     "refund kar diya", "cancel kar diya", "forward kar diya", "forward kar deta", "link bhej", "bhej diya",
+    "ticket has been created", "ticket has been opened", "created your ticket", "created a ticket", "opened your ticket", "opened a ticket",
+    "ticket bana diya", "ticket ban gaya", "ticket khol diya", "ticket khul gaya",
+    "changed your name", "updated your name", "name has been changed", "name has been updated", "naam badal diya", "naam change kar diya", "naam update kar diya",
+    "changed your email", "updated your email", "email has been changed", "email has been updated", "email badal diya", "email change kar diya", "email update kar diya",
 )
 
 REPLY_LANGUAGE = {
@@ -86,6 +92,8 @@ def _digits(text: str) -> str:
 
 def mentions_other_person(message: str, customer: Customer) -> bool:
     """Free check before any LLM call: an email or phone number in the message that is not the customer's own."""
+    if CONTACT_CHANGE_RE.search(message):
+        return False
     own_email = (customer.email or "").lower()
     if any(email.lower() != own_email for email in EMAIL_RE.findall(message)):
         return True
@@ -123,10 +131,14 @@ def check_output(reply: str, messages: list[BaseMessage]) -> list[str]:
     lower_reply = reply.lower()
     # After a staff-approved refund the tool result says so, and then "refunded" is a fact, not an invented claim.
     refund_done = '"refund_status": "done"' in evidence
+    # This turn only: a ticket opened earlier in the chat must not make a new "ticket created" claim look true.
+    last_human = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=-1)
+    ticket_done = any('"ticket_status": "created"' in str(m.content) for m in messages[last_human + 1 :] if isinstance(m, ToolMessage))
+    name_done = any('"profile_status": "updated"' in str(m.content) for m in messages[last_human + 1 :] if isinstance(m, ToolMessage))
     flags += [
         f"banned_phrase:{phrase}"
         for phrase in BANNED_PHRASES
-        if phrase in lower_reply and not (refund_done and "refund" in phrase)
+        if phrase in lower_reply and not (refund_done and "refund" in phrase) and not (ticket_done and "ticket" in phrase) and not (name_done and ("name" in phrase or "naam" in phrase))
     ]
     return flags
 

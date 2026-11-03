@@ -17,6 +17,8 @@ from config.env import env
 from core.models import Tenant
 
 TENANTS = {"demo-company": "Demo Company", "nimbustech": "NimbusTech"}
+# NimbusTech's policy needs a CNIC photo and both emails to confirm, so its agent must not edit profiles.
+AGENT_CAN_EDIT_PROFILE = {"demo-company"}
 
 # Known customers and orders that the lesson's test questions rely on.
 FIXED = {
@@ -67,7 +69,9 @@ class Command(BaseCommand):
         random_customers = {"demo-company": options["customers"], "nimbustech": 15}
 
         for slug, name in TENANTS.items():
-            tenant, _ = Tenant.objects.get_or_create(slug=slug, defaults={"name": name})
+            tenant, _ = Tenant.objects.update_or_create(
+                slug=slug, defaults={"name": name, "agent_can_edit_profile": slug in AGENT_CAN_EDIT_PROFILE}
+            )
 
             for full_name, phone, email, orders in FIXED[slug]:
                 customer = self._customer(tenant, full_name, phone, email)

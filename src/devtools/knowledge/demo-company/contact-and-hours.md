@@ -14,11 +14,11 @@ Effective: 1 October 2026 · Version 5
 
 **Eid:** support is closed for the first **three days** of Eid ul-Fitr and Eid ul-Adha.
 
-The chat assistant is available 24 hours a day, but staff decisions (refund approvals, profile changes) only happen during support hours.
+The chat assistant is available 24 hours a day, but staff decisions (refund approvals, profile changes made by ticket) only happen during support hours.
 
 ## 2. How to reach us and open a support ticket
 
-- **Support tickets** (recommended): to open, raise or create a ticket, write a subject and a description of your issue from your account. Staff reply within **24 business hours**.
+- **Support tickets** (recommended): to open, raise or create a ticket, write a subject and a description of your issue from your account, or ask the chat assistant to open it for you. Staff reply within **24 business hours**.
 - **Email:** support@demo-company.example — replies within 2 business days.
 - **Phone:** +92-21-0000-1234, during support hours only.
 

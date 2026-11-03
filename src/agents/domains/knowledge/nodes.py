@@ -116,7 +116,7 @@ def rewrite_question(state: KnowledgeState) -> dict:
 def generate_answer(state: KnowledgeState, runtime: Runtime[SupportContext]) -> dict:
     today = datetime.now(ZoneInfo("Asia/Karachi")).strftime("%d %B %Y")
     prompt = load_prompt(
-        PROMPTS / "answer.v3.md",
+        PROMPTS / "answer.v4.md",
         company_name=runtime.context.tenant.name,
         today=today,
         reply_language=REPLY_LANGUAGE[state.get("language", "english")],

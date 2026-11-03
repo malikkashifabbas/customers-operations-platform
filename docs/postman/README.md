@@ -28,4 +28,8 @@ Access tokens last 15 minutes: on a 401 run *Refresh access token* or log in aga
 
 **Staff approvals folder (Lesson 13):** refund tickets pause with status `waiting_approval`; approve/reject here and the worker resumes the agent. *List* fills `ticketPublicId` with the oldest waiting ticket. The reviewer comes from the staff token.
 
+**Agent writes (Lesson 18):** *Chat → Ask agent to open a ticket* pauses with `confirmation_required`; *Confirm pending action* or *Cancel pending action* decides. Only this API can approve, a chat message cannot.
+
+**Name and email (Lesson 18B):** *Ask agent to change my name* or *my email*, then *Confirm pending action*. The email link prints in the runserver terminal: copy its token into `emailChangeToken` and run *Auth → Open email confirmation link*. Demo Company only.
+
 **Rule:** every new or changed API is added to the collection in the same change.

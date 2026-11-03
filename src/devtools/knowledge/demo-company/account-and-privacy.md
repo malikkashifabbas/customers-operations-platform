@@ -10,12 +10,12 @@ Your account is identified by your **mobile phone number**. Your email address i
 
 | Detail | How to change it | Notes |
 |---|---|---|
-| Name | Open a support ticket | Changed within 1 business day |
-| Email address | Open a support ticket | We send a confirmation link to the new email |
+| Name | Ask the chat assistant, or open a support ticket | With the assistant: at once, after you confirm. By ticket: within 1 business day |
+| Email address | Ask the chat assistant, or open a support ticket | We send a confirmation link to the new email; the email changes only when the link is opened, within 24 hours |
 | Phone number | Not possible by chat or ticket | Because the phone number is your identity, you must visit a partner store with your CNIC, or create a new account |
 | Delivery addresses | Before checkout, in each order | Cannot be changed after dispatch (see Delivery Policy) |
 
-The support assistant can show you the details we have on file, but it cannot change them.
+The support assistant can show you the details we have on file. After you confirm, it can change your name or send the email link. It cannot change your phone number.
 
 ## 3. Locked accounts
 

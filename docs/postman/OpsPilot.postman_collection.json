@@ -449,6 +449,35 @@
               }
             }
           ]
+        },
+        {
+          "name": "Open email confirmation link",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/email/confirm?token={{emailChangeToken}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "email",
+                "confirm"
+              ],
+              "query": [
+                {
+                  "key": "token",
+                  "value": "{{emailChangeToken}}"
+                }
+              ]
+            },
+            "description": "Copy the token from the email in the runserver terminal into `emailChangeToken`. 200 → email changed. Used twice, expired or forged → 401 `INVALID_TOKEN`."
+          }
         }
       ]
     },
@@ -827,6 +856,229 @@
               ]
             },
             "description": "Lesson 15: the supervisor routes general policy questions to the `knowledge` specialist, which searches this tenant's policy documents (hybrid: pgvector meaning + Postgres full-text keywords, merged with Reciprocal Rank Fusion), grades the results, rewrites the query once if they are off-topic, and answers only from the retrieved text with a `[Document, section]` citation.\n\nTry the same question with `X-Tenant-Public-Id: {{otherTenantPublicId}}` (NimbusTech — needs a NimbusTech customer id): the answer must come from NimbusTech's documents (no COD there), never Demo Company's."
+          }
+        },
+        {
+          "name": "Ask agent to open a ticket",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('waits for confirmation', () => pm.expect(pm.response.json().status).to.eql('confirmation_required'));",
+                  "pm.collectionVariables.set('conversationId', pm.response.json().conversation_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "messages"
+              ]
+            },
+            "description": "200 → `status: confirmation_required` and `pending_action` {type, subject, body}. Nothing is created yet. Another message in this conversation → 409 `CONFIRMATION_PENDING`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Please open a support ticket for me: my order ORD-1002 failed and I want someone to check my card.\",\n  \"conversation_id\": \"ticket-demo-{{$timestamp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Confirm pending action",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "confirm"
+              ]
+            },
+            "description": "200 → `status: answered`, the reply gives the new ticket's id. Nothing waiting → 409 `NOTHING_TO_CONFIRM`. Relay and worker answer the ticket afterwards.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversation_id\": \"{{conversationId}}\",\n  \"approved\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cancel pending action",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "confirm"
+              ]
+            },
+            "description": "200 → nothing created. Run *Ask agent to open a ticket* first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversation_id\": \"{{conversationId}}\",\n  \"approved\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Ask agent to change my name",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('waits for confirmation', () => pm.expect(pm.response.json().status).to.eql('confirmation_required'));",
+                  "pm.collectionVariables.set('conversationId', pm.response.json().conversation_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "messages"
+              ]
+            },
+            "description": "Demo Company only. `pending_action` shows the old and new name. Then run *Confirm pending action*. NimbusTech's policy does not allow it, so its agent refuses.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Please change my name to Ali Raza.\",\n  \"conversation_id\": \"profile-demo-{{$timestamp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Ask agent to change my email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('waits for confirmation', () => pm.expect(pm.response.json().status).to.eql('confirmation_required'));",
+                  "pm.collectionVariables.set('conversationId', pm.response.json().conversation_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "messages"
+              ]
+            },
+            "description": "Demo Company only. After *Confirm pending action* a link goes to the new address; locally it prints in the runserver terminal. The email changes only when *Open email confirmation link* runs.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Please change my email to ali.new@example.com.\",\n  \"conversation_id\": \"profile-demo-{{$timestamp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         }
       ],
@@ -1631,6 +1883,10 @@
     },
     {
       "key": "staffAccessToken",
+      "value": ""
+    },
+    {
+      "key": "emailChangeToken",
       "value": ""
     }
   ]

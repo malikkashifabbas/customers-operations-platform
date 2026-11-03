@@ -47,6 +47,8 @@ class Env(BaseSettings):
 
     # Signs every login token; anyone who has it can pretend to be any user, so it stays in .env only.
     jwt_secret_key: SecretStr | None = None
+    # Links in emails start with this.
+    public_base_url: str = "http://127.0.0.1:8000"
     # Password seed_data gives the fake demo customers and staff; local testing only.
     demo_password: SecretStr | None = None
 
