@@ -82,3 +82,8 @@ sequenceDiagram
 1. `docker compose up -d qdrant`, phir `http://localhost:6333/dashboard`.
 2. `uv run src/manage.py sync_vectors`: "Qdrant has 84 points".
 3. `.env` mein `VECTOR_STORE=qdrant`, runserver aur worker restart, phir Postman se koi policy sawal.
+
+## Lesson 19B: load test
+- `uv run src/manage.py vector_bench load`, `run`, `drop` (`src/devtools/management/commands/vector_bench.py`). Asli `knowledge_chunks` ko haath nahi lagta.
+- Natije aur faisla: `docs/vector-store-report.md`. pgvector ke liye `search_chunks` ab `hnsw.iterative_scan` aur `hnsw.ef_search` har search ki transaction mein lagata hai.
+

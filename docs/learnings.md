@@ -1638,3 +1638,30 @@ pgvector ne `broken earrings return` par *Damaged* section chhoda; Qdrant ke BM2
 
 **Ek bug jo design ne pakda:** admin se document delete hota tha, aur wahan outbox event nahi banta, is liye Qdrant purana document dhoondta rehta. Admin se delete band kiya.
 
+## Learning 34 ⭐: Load test — pgvector ki asli kamzori speed nahi, filter hai (Lesson 19B)
+
+**Sawal:** senior kehte hain pgvector chhote projects ke liye hai. Andaze ki jagah 2 lakh vectors aur 50 companies par naapa. Poori report: `docs/vector-store-report.md`.
+
+**Masla jo dhoondna tha:** HNSW pehle **sab companies** mein se 40 qareeb ke vectors uthata hai, phir `WHERE tenant_id = ...` lagta hai. 4% wali company ke 40 mein se 1–2 bachte hain. 10 maange, kam mile, aur koi error bhi nahi aaya.
+
+**Postgres khud plan chunta hai:** badi (20%) aur darmiyani (4%) company ke liye HNSW, chhoti (0.7%) ke liye tenant btree aur exact sort. Chhoti company hamesha sahi thi; **khatra beech wali companies mein hai.**
+
+| Setting | Darmiyani company recall | 10 se kam jawab | p50 |
+|---|---|---|---|
+| pgvector aaj ka default | **0.869** | **10 / 300** | 45 ms |
+| pgvector `iterative_scan strict` + `ef_search 200` | **1.000** | 0 | 14 ms |
+| Qdrant (bina tuning), gRPC | 1.000 | 0 | 8 ms |
+
+**Teen sabaq:**
+1. **Benchmark ka sahi jawab pehle se maloom hona chahiye.** numpy se exact top 10 nikala, phir har store ko us se milaya (recall@10). Sirf speed naapte to pgvector A "tez" lagta, jab ke galat tha.
+2. **Network ko search na samjho.** Qdrant REST par 13–20 ms laga, lekin khali round trip hi 12 ms tha. gRPC par wohi Qdrant 7 ms. Isi liye har store ka khali round trip bhi naapa.
+3. **Random vectors galat test hain.** Asli jumle topics mein jhurmut banate hain, is liye vectors hamare 84 asli embeddings ko mila kar bane.
+
+**Code mein kya badla:** `search_chunks` ab har search ki transaction mein `hnsw.iterative_scan=strict_order` aur `hnsw.ef_search=200` lagata hai (`set_config(..., true)`, transaction ke baad connection wapas default par). Switch: `PGVECTOR_ITERATIVE_SCAN`, `PGVECTOR_EF_SEARCH`.
+
+**Faisla (report mein):** abhi aur kuch lakh chunks tak tuned pgvector kaafi hai aur aasaan bhi (sync nahi, ek database). Qdrant `VECTOR_STORE` ke peeche tayyar hai. Qdrant par tab jayein jab vectors millions mein hon, index Postgres ki memory mein na aaye, vector search baqi queries ko slow kare, ya sharding chahiye ho.
+
+**Lesson ke aakhir mein khuli list:**
+- **#11 band (code se):** ticket ban gaya ho to `compose` doosre specialist ke "I'm unable to open a ticket" wale jumle hata deta hai (`guards.drop_ticket_denials`, `TICKET_DENIAL_RE`). Ticket na bana ho to jumla rehta hai.
+- **#2 band:** "tum pehle kyun keh rahe the mere account ki details nahi" ab account ko jata hai (`triage.v7`), knowledge ko nahi; isi liye pehle privacy policy ka "delivery address" aata tha. Triage asli LLM par 7/7.
+

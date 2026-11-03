@@ -40,6 +40,9 @@ class Env(BaseSettings):
     # Lesson 19: which store answers policy searches; Qdrant is a search copy of Postgres, kept in sync by the worker.
     vector_store: Literal["pgvector", "qdrant"] = "pgvector"
     qdrant_url: str | None = None  # unset: nothing is copied to Qdrant
+    # Lesson 19B load test: without these, HNSW + tenant filter returned fewer than 10 results for 4%-sized companies.
+    pgvector_iterative_scan: Literal["off", "strict_order", "relaxed_order"] = "strict_order"
+    pgvector_ef_search: int = 200
     chat_history_max_tokens: int = 2000  # earlier conversation a specialist sees; the current turn is always kept
 
     # LangSmith tracing (cloud); off unless LANGSMITH_TRACING=true and a key is set.

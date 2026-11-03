@@ -16,7 +16,7 @@ from agents.core.prompts import load_prompt
 from agents.core.react_subgraph import DomainState
 from agents.domains.support import graph as support
 from agents.domains.support.context import SupportContext
-from agents.domains.support.guards import REPLY_LANGUAGE
+from agents.domains.support.guards import REPLY_LANGUAGE, drop_ticket_denials
 from agents.domains.support.state import GuardUsage, SupportState
 from agents.registry import DOMAINS
 from config.env import env
@@ -92,7 +92,9 @@ def compose(state: OrchestratorState, runtime: Runtime[SupportContext]) -> dict:
         return {}  # one specialist answered: its reply is already the final reply, no extra LLM call
     if len(drafts) > 1 and not rewriting:
         # Joined by code: an LLM here turned "I don't have that information" into invented help-center steps.
-        joined = AIMessage("\n\n".join(str(m.content) for m in drafts), response_metadata={"joined": True})
+        ticket_done = any(isinstance(m, ToolMessage) and '"ticket_status": "created"' in str(m.content) for m in turn)
+        parts = [drop_ticket_denials(str(m.content)) if ticket_done and m.response_metadata["domain"] != "tickets" else str(m.content) for m in drafts]
+        joined = AIMessage("\n\n".join(p for p in parts if p), response_metadata={"joined": True})
         usage = _add_usage(state.get("routing_usage") or NO_USAGE, drafts)
         return {"messages": [*[RemoveMessage(id=m.id) for m in drafts], joined], "routing_usage": usage}
 

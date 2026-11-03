@@ -218,6 +218,20 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `uv run src/manage.py sync_vectors` | Poori copy Postgres se dobara; duplicate nahi | `devtools` |
 | `search_knowledge(...)` | Ek darwaza: pgvector ya Qdrant, shakal ek jaisi | `apps/knowledge/search.py` |
 
+### 1M. Load test: pgvector vs Qdrant (Lesson 19B)
+
+| Code / command | Kya karta hai | Kahan |
+|---|---|---|
+| `uv run src/manage.py vector_bench load` | 2 lakh synthetic vectors, 50 companies: Postgres table `bench_chunks` + do Qdrant collections | `devtools` |
+| `vector_bench run --out bench.json` | Recall@10 (numpy exact se), p50/p95, QPS 8 threads, Postgres ka plan | `devtools` |
+| `vector_bench drop` | Test data hata do | `devtools` |
+| `SET hnsw.iterative_scan = strict_order` | Filter ke baad 10 se kam bachein to HNSW aage dhoondta hai | `apps/knowledge/selectors.py::_tune_hnsw` |
+| `SET hnsw.ef_search = 200` | Har qadam par zyada candidates; default 40 | `PGVECTOR_EF_SEARCH` |
+| `set_config(name, value, true)` | `SET LOCAL` jaisa: sirf is transaction tak | `selectors.py` |
+| `EXPLAIN SELECT ... ORDER BY embedding <=> ...` | Postgres ne HNSW chuna ya tenant btree | `vector_bench run` |
+| `HnswConfigDiff(m=0, payload_m=16)` | Qdrant: global graph nahi, har company ka apna | `vector_bench.py` |
+| `QdrantClient(prefer_grpc=True, grpc_port=6334)` | REST ki jagah gRPC: laptop par 12 ms → 3.4 ms round trip | report |
+
 ---
 
 ## 2. Kafka (dak-khana / post office)

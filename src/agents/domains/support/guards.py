@@ -28,6 +28,8 @@ URL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
 ORDER_RE = re.compile(r"\bORD-\d+\b", re.IGNORECASE)
 # Steps and screens that do not exist; the documents only say "from your account" (open list #1: "Create Ticket option").
 INVENTED_UI_RE = re.compile(r"\bcreate[\s-]ticket\W{0,3}\s*(option|button|section|page|form|tab)\b|\bhelp[\s-]?cent(er|re)\b|\bsupport (section|system|page)\b", re.IGNORECASE)
+# "I'm unable to open a ticket for you": false once the tickets specialist opened one this turn (open list #11).
+TICKET_DENIAL_RE = re.compile(r"\b(unable|not able|can ?not|can't|cannot|don't have the ability|nahi|nahin)\b[^.!?\n]*\btickets?\b|\btickets?\b[^.!?\n]*\b(nahi|nahin) (khol|bana)", re.IGNORECASE)
 # A new email in "change my email to x" is not another person; the LLM triage and the tools still check the rest.
 CONTACT_CHANGE_RE = re.compile(r"\b(change|update|correct|replace|new|naya|nayi|badal\w*|tabdeel)\b.*\b(e-?mail|phone|number|mobile)\b|\b(e-?mail|phone|number|mobile)\b.*\b(change|update|correct|replace|new|naya|nayi|badal\w*|tabdeel)\b", re.IGNORECASE)
 
@@ -146,6 +148,16 @@ def check_output(reply: str, messages: list[BaseMessage]) -> list[str]:
         if phrase in lower_reply and not (refund_done and "refund" in phrase) and not (ticket_done and "ticket" in phrase) and not (name_done and ("name" in phrase or "naam" in phrase)) and not (cancel_done and "cancel" in phrase)
     ]
     return flags
+
+
+def drop_ticket_denials(text: str) -> str:
+    """Remove the sentences that say a ticket cannot be opened; used only after a ticket was really created."""
+    paragraphs = []
+    for paragraph in text.split("\n\n"):
+        sentences = [s for s in re.split(r"(?<=[.!?])\s+", paragraph) if not TICKET_DENIAL_RE.search(s)]
+        if sentences:
+            paragraphs.append(" ".join(sentences))
+    return "\n\n".join(paragraphs)
 
 
 def feedback_for(flags: list[str]) -> str:

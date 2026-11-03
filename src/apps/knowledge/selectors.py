@@ -7,8 +7,10 @@ like "email", "COD" or "restocking fee" that a small embedding model misses. Rec
 import re
 
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
+from django.db import connection, transaction
 from pgvector.django import CosineDistance
 
+from config.env import env
 from core.models import Tenant
 
 from .models import KnowledgeChunk
@@ -19,12 +21,23 @@ RRF_K = 60  # standard RRF constant: damps the gap between rank 1 and rank 2 so 
 
 def search_chunks(*, tenant: Tenant, query_embedding: list[float], limit: int = 4) -> list[KnowledgeChunk]:
     """Nearest chunks by cosine distance (0 = same meaning, 2 = opposite), only from this tenant's documents."""
-    return list(
-        KnowledgeChunk.objects.filter(tenant=tenant)
-        .select_related("document")
-        .annotate(distance=CosineDistance("embedding", query_embedding))
-        .order_by("distance")[:limit]
-    )
+    with transaction.atomic():
+        _tune_hnsw()
+        return list(
+            KnowledgeChunk.objects.filter(tenant=tenant)
+            .select_related("document")
+            .annotate(distance=CosineDistance("embedding", query_embedding))
+            .order_by("distance")[:limit]
+        )
+
+
+def _tune_hnsw() -> None:
+    # is_local=true: the settings end with this transaction, so the pooled connection keeps Postgres defaults.
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT set_config('hnsw.iterative_scan', %s, true), set_config('hnsw.ef_search', %s, true)",
+            [env.pgvector_iterative_scan, str(env.pgvector_ef_search)],
+        )
 
 
 def keyword_search_chunks(*, tenant: Tenant, query: str, limit: int = CANDIDATES) -> list[KnowledgeChunk]:
