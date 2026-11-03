@@ -1614,3 +1614,27 @@ Ticket checks ek baar bina wajah fail hue, phir 33/33 pass. Dobara chala kar bho
 
 **Pass, phir bhi theek nahi:** lesson18 case B pass hai, kyunke check sirf ticket aur ID dekhta hai, lekin jawab mein billing ka "I'm unable to open a ticket for you directly" ab bhi hai (#11). #2 par `other_customer` nahi aata, lekin jawab sawal se hat kar hai. **Sabaq: eval ka PASS utna hi sach hai jitna us ka check;** jawab parhna bhi zaroori hai.
 
+## Learning 33 ⭐: Qdrant — search ki copy, asli data nahi (Lesson 19A)
+
+**Senior ka faisla:** bade projects ke liye Qdrant seekho. Is lesson mein Qdrant pgvector ki **jagah nahi** aaya, **saath** aaya, `.env` ke switch ke saath, taa ke dono ko ek hi sawalon par naapa ja sake.
+
+**Sab se ahem usool: Postgres asli, Qdrant copy.** Do jagah data likhna (dual write) khatarnak hai: Postgres save ho aur Qdrant fail ho to search purane ya gum data par chalti hai. Hal wahi jo humne tickets mein seekha: outbox event usi transaction mein, phir relay → Kafka → worker → Qdrant. Copy ghum ho jaye to `sync_vectors` se dobara bana lo.
+
+**Qdrant ki teen cheezein:**
+1. **Named vectors:** ek point mein `dense` (meaning, 384) aur `bm25` (sparse, words).
+2. **BM25 + IDF:** Qdrant ka keyword search; Postgres full-text ki jagah.
+3. **`is_tenant` payload index:** har company ka data saath rakhta hai. Ye wahi masla hai jo pgvector mein mila tha: HNSW ke baad filter lagne se kam results.
+
+**Muqabla (22 sawal, bina LLM, 84 chunks):**
+
+| Store | Sahi section top 3 mein | Median | Max |
+|---|---|---|---|
+| pgvector + Postgres full-text | 21/22 | 37 ms | 77 ms |
+| Qdrant (dense + BM25) | **22/22** | **22 ms** | 88 ms |
+
+pgvector ne `broken earrings return` par *Damaged* section chhoda; Qdrant ke BM25 ne pakda. **84 chunks par speed ka farq maayne nahi rakhta**: bade data par asli muqabla 19B ka load test karega.
+
+**Tests (bina LLM):** 13/13: naya document relay, Kafka aur worker se Qdrant tak; update par purane chunk IDs khatam; NimbusTech ki search mein Demo Company ka data kabhi nahi; delete; rebuild par count Postgres ke barabar; `search_policies` dono stores par. `lesson15_eval` Qdrant par sirf 3/3 sawal chala, phir Groq ki daily limit.
+
+**Ek bug jo design ne pakda:** admin se document delete hota tha, aur wahan outbox event nahi banta, is liye Qdrant purana document dhoondta rehta. Admin se delete band kiya.
+

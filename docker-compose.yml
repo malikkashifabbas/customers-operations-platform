@@ -1,4 +1,4 @@
-# Local development infrastructure for OpsPilot: Postgres + pgvector, Redis, Kafka (KRaft), Kafka UI.
+# Local development infrastructure for OpsPilot: Postgres + pgvector, Redis, Kafka (KRaft), Qdrant, Kafka UI.
 name: opspilot
 
 services:
@@ -66,6 +66,23 @@ services:
       retries: 10
     restart: unless-stopped
 
+  qdrant:
+    image: qdrant/qdrant:v1.19.2
+    container_name: opspilot-qdrant
+    # 6333 REST (and the dashboard at /dashboard), 6334 gRPC.
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      # The image has no curl, so bash opens a TCP connection to the REST port.
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   kafka-ui:
     image: kafbat/kafka-ui:v1.5.0
     container_name: opspilot-kafka-ui
@@ -82,3 +99,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  qdrant-data:

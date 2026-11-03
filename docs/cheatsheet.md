@@ -204,6 +204,20 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `OrderCancelledV1` + `ORDERS_CANCELLED` | Doosri services ke liye event; abhi koi consumer nahi | `infra/eventbus/` |
 | `"order_status": "unchanged", "reason": ...` | Na kehne ka result saaf lafzon mein; "cancelled" ya "kept" LLM ko ulta lagta tha | `billing/tools.py` |
 
+### 1L. Qdrant — doosra vector store (Lesson 19A)
+
+| Code / command | Kya karta hai | Kahan |
+|---|---|---|
+| `docker compose up -d qdrant` | Qdrant `v1.19.2`, dashboard `http://localhost:6333/dashboard` | `docker-compose.yml` |
+| `QDRANT_URL`, `VECTOR_STORE=pgvector\|qdrant` | Copy chalu karna, aur search kis store se ho | `.env`, `config/env.py` |
+| `create_collection(vectors_config={dense}, sparse_vectors_config={bm25: IDF})` | Ek point mein meaning aur words dono | `infra/vectorstore/qdrant.py` |
+| `KeywordIndexParams(type="keyword", is_tenant=True)` | Har company ke points saath; filter wali search tez | `infra/vectorstore/qdrant.py` |
+| `query_points(..., using="dense"\|"bm25", query_filter=tenant)` | Company ke andar search | `infra/vectorstore/qdrant.py` |
+| `SparseTextEmbedding("Qdrant/bm25")`, `query_embed` | BM25 word vectors; query ke liye alag tareeqa | `infra/llm/embeddings.py` |
+| `knowledge.chunks_changed` (outbox) → worker → `sync_document` | Postgres badla to Qdrant ki copy badli | `apps/knowledge/services/documents.py`, `workers/handlers/knowledge.py` |
+| `uv run src/manage.py sync_vectors` | Poori copy Postgres se dobara; duplicate nahi | `devtools` |
+| `search_knowledge(...)` | Ek darwaza: pgvector ya Qdrant, shakal ek jaisi | `apps/knowledge/search.py` |
+
 ---
 
 ## 2. Kafka (dak-khana / post office)

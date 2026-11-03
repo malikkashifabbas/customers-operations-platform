@@ -14,6 +14,10 @@ class ReadOnlyAdminMixin:
     def has_change_permission(self, request, obj=None):
         return False
 
+    # Deleting here would skip the outbox event, so Qdrant would keep searching a document that no longer exists.
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 class KnowledgeChunkInline(ReadOnlyAdminMixin, admin.TabularInline):
     model = KnowledgeChunk

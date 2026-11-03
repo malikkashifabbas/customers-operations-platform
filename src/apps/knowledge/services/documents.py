@@ -5,6 +5,9 @@ import hashlib
 from django.db import transaction
 
 from core.models import Tenant
+from infra.eventbus.events import KnowledgeChunksChangedV1
+from infra.eventbus.outbox import publish_event
+from infra.eventbus.topics import KNOWLEDGE_CHUNKS_CHANGED
 from infra.llm.embeddings import embed_texts
 
 from ..chunking import parse_markdown
@@ -33,9 +36,23 @@ def ingest_document(*, tenant: Tenant, slug: str, markdown: str) -> tuple[Knowle
             KnowledgeChunk(tenant=tenant, document=document, section=chunk.section, position=index, text=chunk.text, embedding=vector)
             for index, (chunk, vector) in enumerate(zip(parsed.chunks, vectors, strict=True))
         )
+        _chunks_changed(document)
     return document, "created" if created else "updated"
 
 
 def remove_documents_except(*, tenant: Tenant, keep_slugs: set[str]) -> int:
-    deleted, _ = KnowledgeDocument.objects.filter(tenant=tenant).exclude(slug__in=keep_slugs).delete()
+    with transaction.atomic():
+        gone = list(KnowledgeDocument.objects.select_related("tenant").filter(tenant=tenant).exclude(slug__in=keep_slugs))
+        for document in gone:
+            _chunks_changed(document)
+        deleted, _ = KnowledgeDocument.objects.filter(pk__in=[document.pk for document in gone]).delete()
     return deleted
+
+
+def _chunks_changed(document: KnowledgeDocument) -> None:
+    # In the same transaction as the chunks: Qdrant hears about every change, even if the copy runs later.
+    publish_event(
+        topic=KNOWLEDGE_CHUNKS_CHANGED,
+        key=str(document.public_id),
+        event=KnowledgeChunksChangedV1(tenant_public_id=str(document.tenant.public_id), document_public_id=str(document.public_id)),
+    )

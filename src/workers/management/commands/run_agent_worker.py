@@ -7,15 +7,18 @@ from django.core.management.base import BaseCommand
 from pydantic import ValidationError
 
 from infra.cache import idempotency
-from infra.eventbus.events import TicketApprovalDecidedV1, TicketCreatedV1
+from infra.eventbus.events import KnowledgeChunksChangedV1, TicketApprovalDecidedV1, TicketCreatedV1
 from infra.eventbus.kafka import make_consumer, make_producer
 from infra.eventbus.topics import (
+    KNOWLEDGE_CHUNKS_CHANGED,
+    KNOWLEDGE_CHUNKS_CHANGED_DLQ,
     TICKETS_APPROVAL_DECIDED,
     TICKETS_APPROVAL_DECIDED_DLQ,
     TICKETS_CREATED,
     TICKETS_CREATED_DLQ,
 )
 from infra.observability.tracing import record_span, trace_span
+from workers.handlers.knowledge import handle_chunks_changed
 from workers.handlers.tickets import PermanentEventError, handle_approval_decided, handle_ticket_created, mark_failed
 
 GROUP_ID = "agent-workers"
@@ -25,6 +28,7 @@ MAX_ATTEMPTS = 3
 ROUTES = {
     TICKETS_CREATED: (TicketCreatedV1, handle_ticket_created, TICKETS_CREATED_DLQ),
     TICKETS_APPROVAL_DECIDED: (TicketApprovalDecidedV1, handle_approval_decided, TICKETS_APPROVAL_DECIDED_DLQ),
+    KNOWLEDGE_CHUNKS_CHANGED: (KnowledgeChunksChangedV1, handle_chunks_changed, KNOWLEDGE_CHUNKS_CHANGED_DLQ),
 }
 
 
@@ -82,7 +86,7 @@ class Command(BaseCommand):
                 ):
                     outcome = handler(event)
                 self.stdout.write(self.style.SUCCESS(
-                    f"[{where}] ticket {event.ticket_public_id[:8]} {outcome} in {time.perf_counter() - started:.1f}s"
+                    f"[{where}] {event.event_type} {outcome} in {time.perf_counter() - started:.1f}s"
                 ))
                 break
             except PermanentEventError as exc:
@@ -91,7 +95,8 @@ class Command(BaseCommand):
             except Exception as exc:  # transient (LLM rate limit, network): wait and try again
                 self.stderr.write(f"[{where}] attempt {attempt}/{MAX_ATTEMPTS} failed: {type(exc).__name__}: {exc}")
                 if attempt == MAX_ATTEMPTS:
-                    mark_failed(event)
+                    if hasattr(event, "ticket_public_id"):  # only tickets have a status to set to failed
+                        mark_failed(event)
                     self.to_dlq(dlq, msg, f"failed {MAX_ATTEMPTS} times: {type(exc).__name__}")
                 else:
                     time.sleep(2 ** attempt)

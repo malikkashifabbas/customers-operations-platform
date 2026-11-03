@@ -28,3 +28,24 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 
 def embed_query(text: str) -> list[float]:
     return embed_texts([text])[0]
+
+
+SPARSE_MODEL = "Qdrant/bm25"
+
+
+@lru_cache(maxsize=1)
+def _sparse_model():
+    from fastembed import SparseTextEmbedding
+
+    return SparseTextEmbedding(SPARSE_MODEL, cache_dir=str(CACHE_DIR))
+
+
+def embed_sparse_texts(texts: list[str]) -> list[tuple[list[int], list[float]]]:
+    """BM25 word vectors for Qdrant's keyword search: (word ids, weights) per text."""
+    return [(vector.indices.tolist(), vector.values.tolist()) for vector in _sparse_model().embed(texts)]
+
+
+def embed_sparse_query(text: str) -> tuple[list[int], list[float]]:
+    # query_embed, not embed: BM25 weighs words in a query differently from words in a stored document.
+    vector = next(iter(_sparse_model().query_embed(text)))
+    return vector.indices.tolist(), vector.values.tolist()

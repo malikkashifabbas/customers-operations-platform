@@ -1,6 +1,7 @@
 """Typed environment variables, read once from the project's .env file."""
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -36,6 +37,9 @@ class Env(BaseSettings):
     orchestrator_triage: bool = True  # one triage call instead of guard_input + supervisor
     rag_search_limit: int = 3  # chunks per policy search (was 5)
     rag_skip_confident_grade: bool = True  # skip the LLM grade when vector and keyword search agree on the top chunk
+    # Lesson 19: which store answers policy searches; Qdrant is a search copy of Postgres, kept in sync by the worker.
+    vector_store: Literal["pgvector", "qdrant"] = "pgvector"
+    qdrant_url: str | None = None  # unset: nothing is copied to Qdrant
     chat_history_max_tokens: int = 2000  # earlier conversation a specialist sees; the current turn is always kept
 
     # LangSmith tracing (cloud); off unless LANGSMITH_TRACING=true and a key is set.
