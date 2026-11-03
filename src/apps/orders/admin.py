@@ -12,7 +12,7 @@ class OrderAdmin(admin.ModelAdmin):
     list_filter = ["tenant", "status"]
     search_fields = ["order_number", "customer__full_name", "customer__phone"]
     # Status changes only through services (refund_order locks the row and checks it is paid), never a plain Save.
-    readonly_fields = ["public_id", "status", "paid_at", "created_at", "updated_at"]
+    readonly_fields = ["public_id", "status", "paid_at", "cancelled_at", "created_at", "updated_at"]
     list_select_related = ["customer", "tenant"]
     actions = ["refund_selected"]
 

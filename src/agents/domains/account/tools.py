@@ -57,7 +57,7 @@ def update_my_name(new_name: str, runtime: ToolRuntime[SupportContext]) -> str:
         return earlier
     details = {"field": "name", "old_name": customer.full_name, "new_name": new_name}
     if not decision.get("approved"):
-        return finish(runtime, action="change_name", status=AgentActionStatus.CANCELLED, details=details, result=_result("cancelled"))
+        return finish(runtime, action="change_name", status=AgentActionStatus.CANCELLED, details=details, result=_result("unchanged", reason="the customer chose not to change it"))
     # One transaction: the name can never change without its audit row.
     with transaction.atomic():
         change_customer_name(customer=customer, full_name=new_name)
@@ -91,7 +91,7 @@ def request_email_change(new_email: str, runtime: ToolRuntime[SupportContext]) -
     details = {"field": "email", "old_email": customer.email, "new_email": new_email}
     audit = {"action": "request_email_change", "details": details}
     if not decision.get("approved"):
-        return finish(runtime, **audit, status=AgentActionStatus.CANCELLED, result=_result("cancelled"))
+        return finish(runtime, **audit, status=AgentActionStatus.CANCELLED, result=_result("unchanged", reason="the customer chose not to change it"))
     # The limit protects the address too: without it this could flood a stranger's inbox with our links.
     if not ratelimit.allow(scope="email_change", subject=str(customer.public_id), limit=EMAIL_CHANGE_LINKS_PER_HOUR, window_seconds=3600):
         return finish(runtime, **audit, status=AgentActionStatus.BLOCKED, result=_result("limit_reached"))

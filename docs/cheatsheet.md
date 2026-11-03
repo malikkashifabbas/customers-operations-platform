@@ -194,6 +194,16 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `Command(resume={id: answer})` + retry | Kai pause: Redis pehli dafa aksar gira deta hai | `_resume` in `apps/chat/services.py` |
 | `CONTACT_CHANGE_RE` | "Mera email x kar do" doosre customer ka sawal nahi | `agents/domains/support/guards.py` |
 
+### 1K. Pending order cancel (Lesson 18C)
+
+| Code | Kya karta hai | Kahan |
+|---|---|---|
+| `OrderStatus.CANCELLED`, `cancelled_at` | Naya status (migration `orders.0002`) | `apps/orders/models/order.py` |
+| `cancel_order(order=...)` | `select_for_update`, dobara check ke pending hai, status + `orders.cancelled` event ek transaction | `apps/orders/services/orders.py` |
+| `cancel_my_order` | Sirf chat; paid ho to ticket ka raasta; resume par upar ke check phir chalte hain | `agents/domains/billing/tools.py` |
+| `OrderCancelledV1` + `ORDERS_CANCELLED` | Doosri services ke liye event; abhi koi consumer nahi | `infra/eventbus/` |
+| `"order_status": "unchanged", "reason": ...` | Na kehne ka result saaf lafzon mein; "cancelled" ya "kept" LLM ko ulta lagta tha | `billing/tools.py` |
+
 ---
 
 ## 2. Kafka (dak-khana / post office)

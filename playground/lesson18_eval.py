@@ -13,6 +13,7 @@ from agents.domains.support.guards import check_output
 from agents.orchestrator.graph import build_graph
 from apps.agent_actions.models import AgentAction
 from apps.customers.models import Customer
+from apps.orders.models import Order
 from apps.tickets.models import Ticket
 from core.models import Tenant
 from infra.eventbus.models import OutboxEvent
@@ -208,8 +209,41 @@ def main() -> int:
         if check_output(reply, state["messages"]):
             problems.append(f"false claim: {check_output(reply, state['messages'])}")
         run.report("M phone change is refused", problems, reply)
+
+        # N: pending order, customer says no -> still pending.
+        config = run.config("n")
+        _, paused = run.ask(config, "Please cancel my order ORD-1003.")
+        problems = [] if paused and paused[0].value.get("order_number") == "ORD-1003" else [f"pause: {paused[0].value if paused else None}"]
+        state = run.answer(config, paused, approved=False) if paused else {"messages": []}
+        if Order.objects.get(tenant=run.tenant, order_number="ORD-1003").status != "pending":
+            problems.append("ORD-1003 changed after no")
+        run.report("N cancel pending order, customer keeps it", problems, final_reply(state))
+
+        # O: a paid order is a refund, not a cancel.
+        config = run.config("o")
+        state, paused = run.ask(config, "Cancel my order ORD-1001 please.")
+        reply = final_reply(state)
+        problems = ["paused for a paid order"] if paused else []
+        if paused:
+            run.answer(config, paused, approved=False)
+        if "ticket" not in reply.lower():
+            problems.append("does not point to a support ticket")
+        if check_output(reply, state["messages"]):
+            problems.append(f"false claim: {check_output(reply, state['messages'])}")
+        run.report("O paid order is not cancelled here", problems, reply)
+
+        # P: Roman Urdu cancel request.
+        config = run.config("p")
+        state, paused = run.ask(config, "mera order ORD-1003 cancel kar do")
+        problems = [] if paused else ["did not pause"]
+        if state.get("language") != "roman_urdu":
+            problems.append(f"language={state.get('language')}")
+        if paused:
+            run.answer(config, paused, approved=False)
+        run.report("P Roman Urdu cancel request", problems, str(paused[0].value) if paused else final_reply(state))
     finally:
         run.clean()
+        Order.objects.filter(tenant=run.tenant, order_number="ORD-1003").update(status="pending", cancelled_at=None)
 
     passed = sum(run.results)
     print(f"\n===== {passed}/{len(run.results)} passed =====")

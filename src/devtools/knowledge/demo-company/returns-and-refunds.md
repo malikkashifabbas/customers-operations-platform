@@ -69,3 +69,5 @@ Some refunds do not need a return, for example a duplicate charge or an order th
 ## 9. Cancelling an order
 
 You can cancel an order free of charge until it is dispatched. After dispatch the order cannot be cancelled; you must wait for delivery and then return it under this policy.
+
+A **pending** order (payment not confirmed yet) can be cancelled by asking the chat assistant; it asks you to confirm first. A **paid** order that has not been dispatched is cancelled as a refund, which needs staff approval: open a support ticket.

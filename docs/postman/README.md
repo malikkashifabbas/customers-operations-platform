@@ -32,4 +32,6 @@ Access tokens last 15 minutes: on a 401 run *Refresh access token* or log in aga
 
 **Name and email (Lesson 18B):** *Ask agent to change my name* or *my email*, then *Confirm pending action*. The email link prints in the runserver terminal: copy its token into `emailChangeToken` and run *Auth → Open email confirmation link*. Demo Company only.
 
+**Order cancel (Lesson 18C):** *Ask agent to cancel my order* (ORD-1003, pending), then *Confirm pending action*. Paid orders are refunds and need a support ticket.
+
 **Rule:** every new or changed API is added to the collection in the same change.

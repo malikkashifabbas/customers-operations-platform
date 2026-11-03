@@ -1080,6 +1080,51 @@
               }
             }
           }
+        },
+        {
+          "name": "Ask agent to cancel my order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('waits for confirmation', () => pm.expect(pm.response.json().status).to.eql('confirmation_required'));",
+                  "pm.collectionVariables.set('conversationId', pm.response.json().conversation_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "messages"
+              ]
+            },
+            "description": "ORD-1003 is Ali's pending order. `pending_action` shows the order and amount; *Confirm pending action* cancels it and puts an `orders.cancelled` event in the outbox. A paid order (ORD-1001) is not cancelled: the agent points to a support ticket. After testing, set ORD-1003 back to pending in Django admin or the evals see a cancelled order.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Please cancel my order ORD-1003.\",\n  \"conversation_id\": \"cancel-demo-{{$timestamp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
         }
       ],
       "auth": {

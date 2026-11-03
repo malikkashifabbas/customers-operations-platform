@@ -90,6 +90,11 @@ sequenceDiagram
 - `apps/chat/services.py::_resume`: ek pause par `Command(resume=answer)`; kai par id ke saath aur retry, kyunke RedisSaver pehli dafa aksar id wala jawab gira deta hai (30 mein 29, naapa hua).
 - `Tenant.agent_can_edit_profile`: `tools_for` aur tool ke andar dono jagah check.
 
+## Order cancel (18C)
+- `agents/domains/billing/tools.py::cancel_my_order`: sirf apna `pending` order; paid ho to ticket ka raasta; confirm par `cancel_order` aur audit ek transaction mein.
+- `apps/orders/services/orders.py::cancel_order`: row lock, dobara check, `cancelled_at`, aur `orders.cancelled` outbox event.
+- Na kehne ka result `unchanged` hai, kyunke `cancelled` ya `kept` ko LLM nakami samajhta tha.
+
 **Senior ko:** "Agent likhta nahi, tajweez karta hai. Customer API se haan kehta hai, tool ek call par ek dafa chalta hai, audit banta hai, aur company ki policy code mein check hoti hai."
 
 ## Kaise check karein

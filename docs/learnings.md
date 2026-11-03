@@ -1574,3 +1574,21 @@ Ticket checks ek baar bina wajah fail hue, phir 33/33 pass. Dobara chala kar bho
 
 **Abhi nahi:** asli email server; link ab `GET` hai, aur kuch email scanners link khud khol dete hain, is liye asli product mein landing page par button behtar hoga. Purane email par "aap ka email badal raha hai" ka notice bhi nahi jata.
 
+## Learning 31: Order cancel, aur tool ke result ke alfaaz (Lesson 18C)
+
+**Kya cancel hota hai:** sirf `pending` order, jis ka paisa nahi aaya aur jo dispatch nahi hua. Paid order cancel karna paisa wapas karna hai, is liye wo Lesson 13 ki tarah staff approval wala ticket hai. Failed, refunded aur cancelled par kuch nahi hota.
+
+**Race ke do pehre:** customer soch raha ho aur isi dauran payment aa jaye to kya hoga?
+1. Resume par tool upar se dobara chalta hai, to "ye order paid hai" wala check phir chalta hai aur cancel nahi hota. Test mein yahi pehra pakadta hai.
+2. Check aur update ke beech ke chhote waqfe ke liye service `select_for_update` ke saath dobara dekhti hai (`OrderNotCancellable`). Ise service par seedha test kiya.
+
+**Event:** cancel ke saath `orders.cancelled` outbox mein jata hai, isi transaction mein. Abhi koi consumer nahi, lekin warehouse ya payment service baad mein sun sakti hai. Event-driven ka yahi faida hai: bhejne wale ko sunne walon ka pata nahi hona chahiye.
+
+**Asli LLM eval: 16 mein se 15, phir J aur N 2/2.** J isliye fail hua ke manual test ke baad Ali ka naam "Ali Raza" reh gaya tha. Data saaf hone par pass hua.
+
+**Alfaaz ka sabaq:** customer ne cancel se mana kiya, result tha `"order_status": "kept"`, aur bot ne likha "order cancel nahi ho sakta". Naam par `"cancelled"` ka matlab tha "customer ne mana kiya", aur bot ne likha "naam update nahi ho saka". LLM ke liye `cancelled` ka matlab nakami hai. Ab result hai `"unchanged"` + `"reason": "the customer chose not to ..."`, aur jawab aate hain "Your name remains unchanged" aur "ORD-1003 remains unchanged". **Tool ka result bhi ek prompt hai:** us ke lafz wahi hone chahiye jo matlab hai.
+
+**Tests:** cancel 23/23 fake LLM ke saath (event, audit, race, doosre customer ka order, guard, Kafka topic), tickets 33/33, profile 46/46.
+
+**Khuli list mein naya (#11):** case B mein billing ne kaha "ticket nahi bana sakta", aur tickets ne usi jawab mein ticket bana diya.
+

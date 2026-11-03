@@ -10,6 +10,7 @@ class OrderStatus(models.TextChoices):
     PAID = "paid", "Paid"
     FAILED = "failed", "Failed"
     REFUNDED = "refunded", "Refunded"
+    CANCELLED = "cancelled", "Cancelled"
 
 
 class Order(TenantScopedModel):
@@ -20,6 +21,7 @@ class Order(TenantScopedModel):
     status = models.CharField(max_length=16, choices=OrderStatus.choices, default=OrderStatus.PENDING)
     failure_reason = models.CharField(max_length=255, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [

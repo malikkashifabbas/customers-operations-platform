@@ -14,7 +14,7 @@ Effective: 1 August 2026 · Version 5
 
 ## 2. Bank transfer orders
 
-When you choose bank transfer, the order is reserved for **72 hours**. The full amount must reach our account within 72 hours, with your order number in the payment reference. If it does not arrive in time, the order is cancelled automatically and the reserved stock is released. Partial transfers are returned within 5 business days and the order is cancelled.
+When you choose bank transfer, the order is reserved for **72 hours**. The full amount must reach our account within 72 hours, with your order number in the payment reference. If it does not arrive in time, the order is cancelled automatically and the reserved stock is released. Partial transfers are returned within 5 business days and the order is cancelled. Until the payment arrives, you can ask the chat assistant to cancel the order; it asks you to confirm first.
 
 ## 3. Why a payment can fail
 

@@ -41,6 +41,7 @@ BANNED_PHRASES = (
     "ticket bana diya", "ticket ban gaya", "ticket khol diya", "ticket khul gaya",
     "changed your name", "updated your name", "name has been changed", "name has been updated", "naam badal diya", "naam change kar diya", "naam update kar diya",
     "changed your email", "updated your email", "email has been changed", "email has been updated", "email badal diya", "email change kar diya", "email update kar diya",
+    "cancelled your order", "order has been cancelled", "order cancel ho gaya", "order cancel kar diya",
 )
 
 REPLY_LANGUAGE = {
@@ -135,10 +136,11 @@ def check_output(reply: str, messages: list[BaseMessage]) -> list[str]:
     last_human = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=-1)
     ticket_done = any('"ticket_status": "created"' in str(m.content) for m in messages[last_human + 1 :] if isinstance(m, ToolMessage))
     name_done = any('"profile_status": "updated"' in str(m.content) for m in messages[last_human + 1 :] if isinstance(m, ToolMessage))
+    cancel_done = any('"order_status": "cancelled"' in str(m.content) for m in messages[last_human + 1 :] if isinstance(m, ToolMessage))
     flags += [
         f"banned_phrase:{phrase}"
         for phrase in BANNED_PHRASES
-        if phrase in lower_reply and not (refund_done and "refund" in phrase) and not (ticket_done and "ticket" in phrase) and not (name_done and ("name" in phrase or "naam" in phrase))
+        if phrase in lower_reply and not (refund_done and "refund" in phrase) and not (ticket_done and "ticket" in phrase) and not (name_done and ("name" in phrase or "naam" in phrase)) and not (cancel_done and "cancel" in phrase)
     ]
     return flags
 

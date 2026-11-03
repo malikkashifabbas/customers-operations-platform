@@ -13,6 +13,12 @@ class CustomerTenantMismatch(DomainError):
     message = "The customer does not belong to this tenant."
 
 
+class OrderNotCancellable(DomainError):
+    code = "ORDER_NOT_CANCELLABLE"
+    status_code = 409
+    message = "Only pending orders can be cancelled."
+
+
 class OrderNotRefundable(DomainError):
     code = "ORDER_NOT_REFUNDABLE"
     status_code = 409

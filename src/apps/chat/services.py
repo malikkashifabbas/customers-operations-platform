@@ -39,6 +39,11 @@ CONFIRM_REPLY = {
         "roman_urdu": "Main aap ka naam \"{old_name}\" se \"{new_name}\" karne ke liye tayyar hoon. Barah-e-karam confirm ya cancel karein. Abhi kuch nahi badla.",
         "urdu": "میں آپ کا نام \"{old_name}\" سے \"{new_name}\" کرنے کے لیے تیار ہوں۔ براہ کرم تصدیق یا منسوخ کریں۔ ابھی کچھ نہیں بدلا۔",
     },
+    "order_cancel": {
+        "english": "I am ready to cancel order {order_number} ({amount}). Please confirm or cancel. Nothing has changed yet.",
+        "roman_urdu": "Main order {order_number} ({amount}) cancel karne ke liye tayyar hoon. Barah-e-karam confirm ya cancel karein. Abhi kuch nahi badla.",
+        "urdu": "میں آرڈر {order_number} ({amount}) منسوخ کرنے کے لیے تیار ہوں۔ براہ کرم تصدیق یا منسوخ کریں۔ ابھی کچھ نہیں بدلا۔",
+    },
     "email_change": {
         "english": "I am ready to send a confirmation link to {new_email}. Your email changes from {old_email} only when that link is opened. Please confirm or cancel. Nothing has changed yet.",
         "roman_urdu": "Main {new_email} par confirmation link bhejne ke liye tayyar hoon. Aap ka email {old_email} se tabhi badlega jab wo link khola jaye. Barah-e-karam confirm ya cancel karein. Abhi kuch nahi badla.",
