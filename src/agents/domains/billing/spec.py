@@ -12,7 +12,7 @@ from agents.domains.support.tools import get_my_order, get_my_spending_summary, 
 
 from .tools import cancel_my_order
 
-SYSTEM_PROMPT = Path(__file__).parent / "prompts" / "system.v3.md"
+SYSTEM_PROMPT = Path(__file__).parent / "prompts" / "system.v4.md"
 READ_TOOLS = [list_my_orders, get_my_order, get_my_spending_summary]
 
 

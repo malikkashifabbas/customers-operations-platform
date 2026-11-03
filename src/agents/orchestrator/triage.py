@@ -16,7 +16,7 @@ from agents.core.prompts import load_prompt
 from agents.domains.support import guards
 from agents.domains.support.context import SupportContext
 from agents.domains.support.state import Language
-from agents.registry import DOMAINS
+from agents.registry import DOMAINS, domains_for
 from config.env import env
 from infra.llm.gateway import get_chat_model
 
@@ -24,7 +24,7 @@ from .supervisor import FALLBACK_ROUTES
 
 logger = logging.getLogger(__name__)
 
-TRIAGE_PROMPT = Path(__file__).parent / "prompts" / "triage.v5.md"
+TRIAGE_PROMPT = Path(__file__).parent / "prompts" / "triage.v6.md"
 NO_USAGE = {"llm_calls": 0, "tokens": 0}
 TRANSCRIPT_MESSAGES = 6
 
@@ -58,7 +58,7 @@ def triage(state: dict, runtime: Runtime[SupportContext]) -> dict:
         company_name=context.tenant.name,
         customer_name=context.customer.full_name,
         previous_language=previous_language,
-        domains="\n".join(f"- {name}: {spec.description}" for name, spec in DOMAINS.items()),
+        domains="\n".join(f"- {name}: {spec.description}" for name, spec in domains_for(context.channel).items()),
     )
     request = f"Conversation so far:\n{_transcript(state['messages'][:-1]) or '(none)'}\n\nLatest customer message: {message}"
     try:
@@ -74,7 +74,8 @@ def triage(state: dict, runtime: Runtime[SupportContext]) -> dict:
         return {**reset, "blocked_reason": None, "language": previous_language, "routes": FALLBACK_ROUTES, "guard_usage": NO_USAGE}
 
     blocked = None if verdict.decision == "allowed" else verdict.decision
-    routes = [d for d in dict.fromkeys(name.strip().lower() for name in verdict.domains) if d in DOMAINS]
+    allowed = domains_for(context.channel)
+    routes = [d for d in dict.fromkeys(name.strip().lower() for name in verdict.domains) if d in allowed]
     return {
         **reset,
         "blocked_reason": blocked,

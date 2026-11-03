@@ -19,6 +19,8 @@ from core.models import Tenant
 TENANTS = {"demo-company": "Demo Company", "nimbustech": "NimbusTech"}
 # NimbusTech's policy needs a CNIC photo and both emails to confirm, so its agent must not edit profiles.
 AGENT_CAN_EDIT_PROFILE = {"demo-company"}
+# Each company's account policy: failed logins before the lock, and how long the lock lasts.
+LOGIN_LOCK = {"demo-company": (5, 30), "nimbustech": (3, 60)}
 
 # Known customers and orders that the lesson's test questions rely on.
 FIXED = {
@@ -70,7 +72,13 @@ class Command(BaseCommand):
 
         for slug, name in TENANTS.items():
             tenant, _ = Tenant.objects.update_or_create(
-                slug=slug, defaults={"name": name, "agent_can_edit_profile": slug in AGENT_CAN_EDIT_PROFILE}
+                slug=slug,
+                defaults={
+                    "name": name,
+                    "agent_can_edit_profile": slug in AGENT_CAN_EDIT_PROFILE,
+                    "login_max_failures": LOGIN_LOCK[slug][0],
+                    "login_lock_minutes": LOGIN_LOCK[slug][1],
+                },
             )
 
             for full_name, phone, email, orders in FIXED[slug]:

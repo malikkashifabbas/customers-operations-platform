@@ -26,6 +26,8 @@ EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 PHONE_RE = re.compile(r"\+?\d[\d\s-]{7,}\d")
 URL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
 ORDER_RE = re.compile(r"\bORD-\d+\b", re.IGNORECASE)
+# Steps and screens that do not exist; the documents only say "from your account" (open list #1: "Create Ticket option").
+INVENTED_UI_RE = re.compile(r"\bcreate[\s-]ticket\W{0,3}\s*(option|button|section|page|form|tab)\b|\bhelp[\s-]?cent(er|re)\b|\bsupport (section|system|page)\b", re.IGNORECASE)
 # A new email in "change my email to x" is not another person; the LLM triage and the tools still check the rest.
 CONTACT_CHANGE_RE = re.compile(r"\b(change|update|correct|replace|new|naya|nayi|badal\w*|tabdeel)\b.*\b(e-?mail|phone|number|mobile)\b|\b(e-?mail|phone|number|mobile)\b.*\b(change|update|correct|replace|new|naya|nayi|badal\w*|tabdeel)\b", re.IGNORECASE)
 
@@ -129,6 +131,7 @@ def check_output(reply: str, messages: list[BaseMessage]) -> list[str]:
     flags = [f"ungrounded_email:{email}" for email in EMAIL_RE.findall(reply) if email.lower() not in evidence]
     flags += [f"ungrounded_link:{url}" for url in URL_RE.findall(reply) if url.lower() not in evidence]
     flags += [f"ungrounded_order:{number}" for number in ORDER_RE.findall(reply) if number.lower() not in evidence]
+    flags += [f"invented_ui:{match.group(0)}" for match in INVENTED_UI_RE.finditer(reply) if match.group(0).lower() not in evidence]
     lower_reply = reply.lower()
     # After a staff-approved refund the tool result says so, and then "refunded" is a fact, not an invented claim.
     refund_done = '"refund_status": "done"' in evidence

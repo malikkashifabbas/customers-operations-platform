@@ -131,6 +131,7 @@ opspilot/
 | 5 | customers app | Pehli API (Ninja), tenant guard, DomainError, unique phone per tenant; 10 tests pass incl. tenant isolation | L6, L7 |
 | — | Git | Commit `7a92e22` pushed to GitHub (Lessons 1–5) | — |
 | — | Project memory | `MEMORY.md` + `CLAUDE.md` banaye; commit `69ee763` pushed | — |
+| 18-end | Khuli list fixes | #9 `DomainSpec.channels` + `registry.domains_for` (tickets chat-only) + worker raises on an empty reply; #7 worker resumes the first of several pauses by id (`_config`); #8 `Tenant.login_max_failures` / `login_lock_minutes` (core.0003); #1 `INVENTED_UI_RE` guard; prompts `triage.v6`, tickets `system.v2`, billing `system.v4`; `lesson13_approval.py` case E. Fake tests 17/17 + earlier suites green; real-LLM runs blocked by the Groq daily limit | L32 |
 | 18C | Pending order cancel | `OrderStatus.CANCELLED` + `cancelled_at` (orders.0002), `orders.services.cancel_order` (row lock, re-check, `orders.cancelled` outbox event, `OrderNotCancellable`), topic `orders.cancelled`, `billing/tools.py::cancel_my_order` (chat only; paid → ticket), billing `system.v3`, `triage.v5`, confirm text `order_cancel`, guard `cancel_done`, Demo returns §9 + Nimbus payments line. Decline results renamed to `unchanged` + reason (LLM read `cancelled`/`kept` as failure). Tests: cancel 23/23, tickets 33/33, profile 46/46 fake LLM; `lesson18_eval.py` 15/16 then J+N 2/2 (J failed on leftover manual-test name) | L31 |
 | 18B | Naam aur email | `agents/domains/account/tools.py` (`update_my_name`, `request_email_change`, switch checked inside the tool), `agents/core/write_actions.py`, `Tenant.agent_can_edit_profile` (core.0002; demo on, nimbus off; seed sets it), `apps/accounts/services/email_change.py`, `GET /api/auth/email/confirm`, 3 links/hour, console email in dev, `triage.v4`, account `system.v3`, Demo account policy; `CONTACT_CHANGE_RE`. **FOUND: RedisSaver loses `Command(resume={id: ...})` 29/30 on first try; plain `Command(resume=...)` 0/30, Postgres and memory fine, cause unproven.** `_resume` uses plain for one pause, keyed + 3 tries for several. Tests: 46/46 + 33/33 fake LLM, stress 0 wrong. Real LLM: only case A | L30 ⭐ |
 | 18A | Agent writes: confirmation | `agents/domains/tickets/` (specialist + `create_support_ticket` with `interrupt`, idempotent by `tool_call_id`: every write tool must do this), `POST /api/chat/confirm`, chat `status` + `pending_action`, SSE `confirmation_required`, `apps/agent_actions` (`AgentAction` audit, read-only admin), `AGENT_TICKETS_PER_HOUR=5`, guard `ticket_done`, `triage.v3`, `answer.v4`, contact docs say the assistant can open a ticket. Tests: 33/33 with fake LLM on real API, Redis, Postgres, outbox; `lesson18_eval.py` only case A ran before the Groq daily limit | L29 ⭐ |
@@ -179,18 +180,13 @@ opspilot/
 - Git: pushed — `7a92e22` (Lessons 1–5), `69ee763` (MEMORY.md + CLAUDE.md), `3926d6d` (Lesson 6), `3440413` (Lesson 7), `c134dd1` (Lessons 8–9; message mein galti se quotes + `-m` aa gaye — pushed hai, isliye chhor diya, force push nahi), `fb17ed1` (Lesson 10, saaf message ✅), `17d9619` (Lesson 11A + naming fix + cheatsheet/walkthroughs), `0c76234` (Lesson 11B + Streams + roadmap decision), `fe17e6f` (Lesson 12 guardrails), `f48b044` (12B + 13 approvals), `560086f` (Lesson 14 multi-agent), `d76395a` (Lesson 15 RAG), `cdada78` (15C admin), `0f300b3` (16A Langfuse), `572bf43` (16B LangSmith + optimizations), `0892f93` (SearchPlan fix + LLM timeout), `37cd267` (16C + Dubai and earrings fixes), `8fe291b` (413 fix), `ec1b7c0` (two-part replies), `982f519` (four test-run fixes; title by mistake is plan text). User **SourceTree** se khud commit/push karta hai — commit message SourceTree ke liye do: pehli line title, khali line, phir tafseel (bina quotes/`-m`).
 - `playground/` = seekhne ki files (git mein, magar project ka hissa nahi); asal code `src/` mein.
 
-### Khuli list (Lesson 18 ke aakhir mein fix karni hai)
-1. "Create Ticket option" ghadna: `kasa create krun` aur `acha ab man kia krun` follow-ups par (prompt/document ka hal kaafi nahi nikla).
-2. `to tum pahla yah kun kah rha tha...` ghalat `other_customer`.
-3. `ticket raise nhi kr skta kia ?` saaf nahi kehta ke bot khud ticket nahi bana sakta (Lesson 18 ke baad jawab badlega).
-4. Lesson 14 aur 15 ke evals final code par poore nahi chale (Groq daily limit).
-5. Refund + policy ticket ke ek run mein policy line check filter se nazar nahi aayi; `lesson13` mein is ka case rakhna.
-6. ~~`lesson18_eval.py` poora chalana~~ chal gaya: 15/16, J aur N dobara 2/2 (3 Nov). Baqi: case B (#11).
-7. Ticket worker: ek ticket mein do paid orders ka refund do pause banayega, jabke `_run` pehle ka hi jawab deta hai (`Command(resume=...)` bina id); test karna.
-8. NimbusTech ki account policy 3 ghalat logins aur 2FA kehti hai, jabke code sab companies par 5 ghalat logins aur 30 minute lagata hai, 2FA nahi; policy aur code milana.
-9. **Manual test 3 Nov (18A):** agent ka banaya ticket worker ne khali jawab ke saath `answered` kar diya. Ticket body "Customer requests support for order ORD-1002" par triage ne ticket channel mein bhi `tickets` chuna, jahan koi tool nahi, aur LLM ne `''` likha. Fix: ticket channel mein `tickets` route na ho, aur worker khali jawab ko `answered` na kare.
-10. **Manual test 3 Nov (18A):** `open ticket for my order ORD-1002` par masla poochhe bagair ticket bana (prompt rule 1 kehta hai pehle poochho).
-11. **lesson18_eval case B (3 Nov):** "open a ticket, I was charged twice for ORD-1001" went to billing + tickets; the joined reply says both "I'm unable to open a ticket" (billing) and the new ticket id (tickets). Billing must not comment on the ticket part.
+### Khuli list (3 Nov 2026, evals ke baad)
+**Final code par asli LLM evals (3 Nov, 14:50–15:13):** open-list messages 5/5, lesson18 16/16, lesson13 5/5, lesson14 7/7, lesson12 16/16, lesson15 19/19.
+Band: #1 (guard + koi ghadi screen nahi), #3, #4, #5, #6, #7, #8 (2FA roadmap par), #9, #10.
+Abhi khula:
+- **#11:** lesson18 case B pass hota hai (ticket aur ID theek), lekin jawab ab bhi kehta hai "I'm unable to open a ticket for you directly" (billing ka hissa). Prompt v4 kaafi nahi; code se hal (billing ka jawab tickets ke saath jodte waqt ya guard se).
+- **#2 adhoora:** ab `other_customer` nahi, lekin jawab sawal se hat kar hai aur "delivery address dikha sakte hain" jaisi baat kehta hai jo profile mein nahi.
+- NimbusTech ki policy wala 2FA nahi bana.
 
 ## 8. Next steps (roadmap)
 

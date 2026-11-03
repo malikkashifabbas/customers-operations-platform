@@ -7,6 +7,7 @@ from django.contrib.auth.hashers import check_password, make_password
 
 from apps.customers.models import Customer
 from apps.customers.utils import normalize_phone
+from core.models import Tenant
 from infra.cache import login_attempts
 
 from .. import tokens
@@ -52,7 +53,9 @@ def _token_pair(claims: dict) -> dict:
 def login_customer(*, tenant_public_id: UUID, phone: str, password: str) -> dict:
     phone = normalize_phone(phone)
     attempt = f"customer:{tenant_public_id}:{phone}"
-    if login_attempts.is_locked(attempt):
+    tenant = Tenant.objects.filter(public_id=tenant_public_id, is_active=True).first()
+    max_failures, lock_seconds = (tenant.login_max_failures, tenant.login_lock_minutes * 60) if tenant else (5, 1800)
+    if login_attempts.is_locked(attempt, max_failures):
         raise LoginLocked()
     customer = (
         Customer.objects.select_related("tenant")
@@ -64,7 +67,7 @@ def login_customer(*, tenant_public_id: UUID, phone: str, password: str) -> dict
     elif check_password(password, customer.password):
         login_attempts.clear(attempt)
         return _token_pair(_customer_claims(customer))
-    login_attempts.record_failure(attempt)
+    login_attempts.record_failure(attempt, lock_seconds)
     raise InvalidCredentials()
 
 

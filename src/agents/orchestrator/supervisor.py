@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from agents.core.prompts import load_prompt
 from agents.domains.support.context import SupportContext
-from agents.registry import DOMAINS
+from agents.registry import DOMAINS, domains_for
 from config.env import env
 from infra.llm.gateway import get_chat_model
 
@@ -39,7 +39,7 @@ def supervisor(state: dict, runtime: Runtime[SupportContext]) -> dict:
     prompt = load_prompt(
         SUPERVISOR_PROMPT,
         company_name=runtime.context.tenant.name,
-        domains="\n".join(f"- {name}: {spec.description}" for name, spec in DOMAINS.items()),
+        domains="\n".join(f"- {name}: {spec.description}" for name, spec in domains_for(runtime.context.channel).items()),
     )
     usage = {"llm_calls": 0, "tokens": 0}
     try:
@@ -48,7 +48,7 @@ def supervisor(state: dict, runtime: Runtime[SupportContext]) -> dict:
         usage = {"llm_calls": 1, "tokens": (result["raw"].usage_metadata or {}).get("total_tokens", 0)}
         # Keep known names only, in order, without duplicates: the LLM may return "Billing" or invent a domain.
         routes = list(dict.fromkeys(d.strip().lower() for d in (result["parsed"].domains if result["parsed"] else [])))
-        routes = [d for d in routes if d in DOMAINS]
+        routes = [d for d in routes if d in domains_for(runtime.context.channel)]
     except Exception:
         logger.warning("supervisor failed, using fallback routes", exc_info=True)
         routes = []

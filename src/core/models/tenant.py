@@ -11,6 +11,9 @@ class Tenant(BaseModel):
     is_active = models.BooleanField(default=True)
     # Companies have different rules: one may require a CNIC photo, so the agent edits a profile only where allowed.
     agent_can_edit_profile = models.BooleanField(default=False)
+    # Each company's policy sets its own lock: Demo Company 5 tries and 30 minutes, NimbusTech 3 tries and 1 hour.
+    login_max_failures = models.PositiveSmallIntegerField(default=5)
+    login_lock_minutes = models.PositiveSmallIntegerField(default=30)
 
     def __str__(self) -> str:
         return self.name

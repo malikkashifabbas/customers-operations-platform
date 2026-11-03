@@ -85,6 +85,21 @@ def main() -> int:
     results.append(report("C ticket: refund PAID order -> staff APPROVE", problems, last_reply(state)))
     Order.objects.filter(pk=order.pk).update(status=OrderStatus.PAID)
 
+    # E: refund plus a policy question in one ticket: the pause survives the second specialist, and the policy part stays right.
+    config = {"configurable": {"thread_id": uuid.uuid4().hex}}
+    graph.invoke(ticket_question("Refund ORD-1001, I was charged twice. Also, how long does a card refund take?"), config, context=ticket_ctx)
+    problems = [] if graph.get_state(config).interrupts else ["did not pause"]
+    state = graph.invoke(Command(resume={"approved": False, "note": "One charge only.", "reviewer": "eval"}), config, context=ticket_ctx)
+    order.refresh_from_db()
+    reply = last_reply(state)
+    if order.status != OrderStatus.PAID:
+        problems.append(f"order is {order.status} after a rejection")
+    if "5" not in reply or "7" not in reply:
+        problems.append("card refund time 5-7 business days missing")
+    if "5–10" in reply or "5-10" in reply:
+        problems.append("invented 5-10 days")
+    results.append(report("E ticket: refund + policy question, staff REJECT", problems, reply))
+
     # D: chat cannot wait for staff, so it has no refund tool at all.
     config = {"configurable": {"thread_id": uuid.uuid4().hex}}
     state = graph.invoke({"messages": [HumanMessage("please refund ORD-1001")]}, config, context=SupportContext(tenant=demo, customer=ali))

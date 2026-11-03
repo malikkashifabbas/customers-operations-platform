@@ -1592,3 +1592,25 @@ Ticket checks ek baar bina wajah fail hue, phir 33/33 pass. Dobara chala kar bho
 
 **Khuli list mein naya (#11):** case B mein billing ne kaha "ticket nahi bana sakta", aur tickets ne usi jawab mein ticket bana diya.
 
+## Learning 32: Khuli list band karna — kaunsa fix code ka, kaunsa prompt ka (Lesson 18 ka aakhir)
+
+| # | Masla | Fix | Kis qism ka |
+|---|---|---|---|
+| 9 | Agent ke ticket ka khali jawab | Ticket ke andar `tickets` specialist nahi (`DomainSpec.channels`); worker khali jawab par error deta hai, retry karta hai, phir ticket `failed` | **Code** |
+| 7 | Do refund ek ticket mein | Pehle pause ka jawab id se, doosra staff ke paas naya request ban kar | **Code** |
+| 8 | NimbusTech ki policy 3 koshishein / 1 ghanta | `Tenant.login_max_failures`, `login_lock_minutes` | **Code** |
+| 1 | "Create Ticket option" ghadna | `INVENTED_UI_RE`: aisi screen ka naam aaye to guard rewrite karwata hai | **Code** |
+| 2, 3, 10, 11 | Galat `other_customer`, saaf na kehna, masla na poochhna, billing ka ulta jumla | Naye prompt versions | Prompt |
+
+**Usool:** jahan code guarantee de sakta hai wahan code. Teen baar prompt badalne ke baad bhi "Create Ticket option" aata raha, to ab ye regex se pakda jata hai. Lekin "masla poochho" jaise faisle sirf prompt se hote hain; un ki tasdeeq sirf asli LLM eval se hogi.
+
+**Ek do-dhari baat:** worker ab khali jawab par error deta hai. Is se ticket "answered with nothing" nahi hota, lekin agar LLM baar baar khali likhe to ticket `failed` hoga aur DLQ mein jayega; staff ko dikhega. Chupke se ghalat jawab se ye behtar hai.
+
+**Test ka sabaq:** cancel test ne aap ke manual test ka event bhi gina aur mita diya. Test sirf apne banaye data ko gine aur saaf kare (`created_at__gte=started`).
+
+**Tests:** fake LLM 17/17 (naye fixes), tickets 33/33, profile 46/46, cancel 23/23, auth 38/38 + 43/43. Asli LLM ke messages aur evals Groq ki daily limit par ruk gaye (har request 503); "asli LLM baqi" wale items abhi sabit nahi.
+
+**Asli LLM evals, final code (3 Nov, 23 minute, Groq limit nahi aayi):** open-list messages 5/5, lesson18 16/16, lesson13 5/5 (naya case E samet), lesson14 7/7, lesson12 16/16, lesson15 19/19. Pehli dafa sab evals ek hi code par aur ek saath pass hue.
+
+**Pass, phir bhi theek nahi:** lesson18 case B pass hai, kyunke check sirf ticket aur ID dekhta hai, lekin jawab mein billing ka "I'm unable to open a ticket for you directly" ab bhi hai (#11). #2 par `other_customer` nahi aata, lekin jawab sawal se hat kar hai. **Sabaq: eval ka PASS utna hi sach hai jitna us ka check;** jawab parhna bhi zaroori hai.
+

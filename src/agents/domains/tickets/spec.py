@@ -11,7 +11,7 @@ from agents.domains.support.guards import REPLY_LANGUAGE
 
 from .tools import create_support_ticket
 
-SYSTEM_PROMPT = Path(__file__).parent / "prompts" / "system.v1.md"
+SYSTEM_PROMPT = Path(__file__).parent / "prompts" / "system.v2.md"
 TOOLS = [create_support_ticket]
 
 
@@ -31,6 +31,7 @@ def prompt_for(state, context: SupportContext, tools: list) -> str:
 SPEC = DomainSpec(
     name="tickets",
     description="the customer asks the assistant to open, raise or create a support ticket for them",
+    channels=("chat",),
     build=lambda: build_react_subgraph(
         all_tools=TOOLS, tools_for=tools_for, prompt_for=prompt_for, context_schema=SupportContext
     ),

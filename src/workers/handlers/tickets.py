@@ -74,14 +74,21 @@ def handle_approval_decided(event: TicketApprovalDecidedV1) -> str:
             return "skipped: another worker is working on this ticket"
         _publish(ticket, "approval_decided", {"approved": ticket.approval_decision["approved"]})
         # Command(resume=...) continues the paused run: interrupt() inside request_refund returns this decision.
-        return _run(ticket, Command(resume=ticket.approval_decision))
+        pending = get_graph().get_state(_config(ticket)).interrupts
+        # Two refunds in one ticket pause twice: answer the first by id, and the second goes back to staff as a new request.
+        resume = {pending[0].id: ticket.approval_decision} if len(pending) > 1 else ticket.approval_decision
+        return _run(ticket, Command(resume=resume))
+
+
+def _config(ticket: Ticket) -> dict:
+    return {"configurable": {"thread_id": f"{ticket.tenant.public_id}:{ticket.customer.public_id}:ticket-{ticket.public_id}"}}
 
 
 def _run(ticket: Ticket, graph_input) -> str:
     """Run (or resume) the agent for this ticket, stream its events, then save either the answer or the approval request."""
     _publish(ticket, "processing", {})
     config = trace_config(
-        {"configurable": {"thread_id": f"{ticket.tenant.public_id}:{ticket.customer.public_id}:ticket-{ticket.public_id}"}},
+        _config(ticket),
         session_id=f"ticket-{ticket.public_id}",  # the first run and the resume after approval land in one session
         user_id=str(ticket.customer.public_id),
         tenant=ticket.tenant.slug,
@@ -104,6 +111,9 @@ def _run(ticket: Ticket, graph_input) -> str:
         return f"waiting for staff approval ({request['order_number']})"
 
     reply = next((m.content for m in reversed(state.values["messages"]) if isinstance(m, AIMessage) and m.content), "")
+    if not reply.strip():
+        # Never "answered" with nothing: raising lets the worker retry, then mark the ticket failed for staff.
+        raise RuntimeError("the agent wrote an empty reply")
     services.mark_ticket_answered(ticket=ticket, reply=reply)
     _publish(ticket, "answered", {"reply": reply})  # after the DB commit, so a GET right after sees the same answer
     return f"answered ({len(reply)} chars)"

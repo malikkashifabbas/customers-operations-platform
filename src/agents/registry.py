@@ -7,3 +7,7 @@ from agents.domains.knowledge.spec import SPEC as KNOWLEDGE
 from agents.domains.tickets.spec import SPEC as TICKETS
 
 DOMAINS: dict[str, DomainSpec] = {spec.name: spec for spec in (BILLING, ACCOUNT, KNOWLEDGE, TICKETS)}
+
+
+def domains_for(channel: str) -> dict[str, DomainSpec]:
+    return {name: spec for name, spec in DOMAINS.items() if channel in spec.channels}
