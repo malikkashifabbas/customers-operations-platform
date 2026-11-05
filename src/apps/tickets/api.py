@@ -25,6 +25,11 @@ def create_ticket(request, payload: TicketIn):
     return 202, ticket
 
 
+@router.get("/", response=list[TicketOut])
+def list_tickets(request):
+    return selectors.list_tickets_for_customer(tenant=request.auth.tenant, customer=request.auth.customer)
+
+
 @router.get("/{public_id}", response=TicketOut)
 def get_ticket(request, public_id: UUID):
     return selectors.get_ticket_for_customer(tenant=request.auth.tenant, customer=request.auth.customer, public_id=public_id)

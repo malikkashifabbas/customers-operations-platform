@@ -1663,5 +1663,24 @@ pgvector ne `broken earrings return` par *Damaged* section chhoda; Qdrant ke BM2
 
 **Lesson ke aakhir mein khuli list:**
 - **#11 band (code se):** ticket ban gaya ho to `compose` doosre specialist ke "I'm unable to open a ticket" wale jumle hata deta hai (`guards.drop_ticket_denials`, `TICKET_DENIAL_RE`). Ticket na bana ho to jumla rehta hai.
-- **#2 band:** "tum pehle kyun keh rahe the mere account ki details nahi" ab account ko jata hai (`triage.v7`), knowledge ko nahi; isi liye pehle privacy policy ka "delivery address" aata tha. Triage asli LLM par 7/7.
+- **#2 band:** "tum pehle kyun keh rahe the mere account ki details nahi" ab account ko jata hai (`triage.v7`), knowledge ko nahi; isi liye pehle privacy policy ka "delivery address" aata tha. Triage asli LLM par 7/7. Phir bhi account ne "support team se raabta karein" kaha, kyun ke us ke rule 2 mein ye sawal tha hi nahi: `system.v4` mein jodha, ab wo profile tool chala kar asli email/naam batata hai (4/4).
+
+**Evals nayi key par:** lesson18 16/16, open-list 5/5, lesson15 Qdrant par 19/19, lesson14 7/7, lesson12 16/16; lesson13 daily limit ki wajah se nahi chala. **Sabaq dobara:** #2 ka eval PASS tha, lekin jawab parha to ghalat nikla.
+
+## Learning 35: React frontend — MVC har feature ke andar
+
+**Senior ki maang:** frontend bhi. `frontend/` alag folder, isi repo mein. Poori tafseel `frontend/README.md` mein.
+
+**MVC kahan:** React khud View hai. Teen global folders (`models/ views/ controllers/`) ek feature ko teen jagah bikher dete. Is liye har feature (auth, chat, tickets, staff) ke andar `model/` (API, types, zod, store), `controller/` (hooks) aur `view/` (pages).
+
+**Teen cheezein jo backend ki wajah se zaroori thin:**
+1. **SSE POST se aur Bearer token ke saath:** browser ka `EventSource` dono nahi karta, is liye `fetch` stream + `eventsource-parser`.
+2. **`reset` / `replace` events:** output guard jawab rokta hai to UI bubble saaf karti ya badal deti hai. Ye wahi guard hai jo backend mein bana.
+3. **Login ko `tenant_public_id` chahiye:** URL mein company ka slug (`/demo-company/login`), aur naya public route `GET /api/tenants/{slug}`. List kabhi nahi, taa ke koi companies gin na sake.
+
+**Optimization:** route-level lazy chunks; tokens ek animation frame mein jama ho kar ek dafa render; React Compiler (khud memo); TanStack Query cache + 4xx par retry nahi; 401 par sirf ek refresh (single-flight), baqi requests intezar karti hain; staff approvals optimistic.
+
+**Brand tokens:** rang sirf `src/styles/index.css` mein. Components `bg-surface`, `text-fg`, `bg-primary` likhte hain; light/dark sirf role tokens badalte hain.
+
+**Frontend testing se pakda (5 Nov):** pending order cancel ki stream mein `tool_call` nahi tha, is liye DebugPanel "No tools used" dikhata. Wajah: `agent_events` specialist ke andar ke updates chhod deta tha, aur interrupt mein specialist node khatam hi nahi hota, is liye parent ka update kabhi nahi aata. Ab `tool_call` andar ke update se bhi aata hai, aur call id se ek hi dafa (`streaming.py::_calls_once`). Asli API par: naam badalne ki stream `start → routing → tool_call → confirmation_required → done`, aur "List my orders" mein `list_my_orders` sirf ek dafa. Ticket ki live timeline ko bhi fayda, kyun ke worker yahi function use karta hai.
 

@@ -12,7 +12,7 @@ from agents.domains.support.tools import get_my_profile
 
 from .tools import request_email_change, update_my_name
 
-SYSTEM_PROMPT = Path(__file__).parent / "prompts" / "system.v3.md"
+SYSTEM_PROMPT = Path(__file__).parent / "prompts" / "system.v4.md"
 READ_TOOLS = [get_my_profile]
 WRITE_TOOLS = [update_my_name, request_email_change]
 

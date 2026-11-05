@@ -14,6 +14,10 @@ def get_ticket_for_customer(*, tenant: Tenant, customer: Customer, public_id: UU
     return get_object_or_404(Ticket, tenant=tenant, customer=customer, public_id=public_id)
 
 
+def list_tickets_for_customer(*, tenant: Tenant, customer: Customer, limit: int = 50) -> list[Ticket]:
+    return list(Ticket.objects.filter(tenant=tenant, customer=customer).order_by("-created_at")[:limit])
+
+
 def get_ticket_for_event(*, tenant_public_id: str, ticket_public_id: str) -> Ticket | None:
     # The event carries both ids; matching on both means a forged event cannot reach another tenant's ticket.
     return (

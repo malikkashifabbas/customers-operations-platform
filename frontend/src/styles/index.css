@@ -1,0 +1,166 @@
+@import 'tailwindcss';
+
+/* Dark mode follows the .dark class (set before paint in index.html), not only the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Brand palette (Cockpit Navy, Beacon Amber, Ink): components use only these scales or the role tokens, never raw hex. */
+@theme {
+  --font-sans: 'Inter', 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', ui-monospace, monospace;
+
+  --color-brand-50: #eef3ff;
+  --color-brand-100: #dbe5ff;
+  --color-brand-200: #bccdfd;
+  --color-brand-300: #8eabf8;
+  --color-brand-400: #5f83ef;
+  --color-brand-500: #3b63e0;
+  --color-brand-600: #2d4fc6;
+  --color-brand-700: #253fa3;
+  --color-brand-800: #1f3483;
+  --color-brand-900: #1c2d68;
+  --color-brand-950: #121b40;
+
+  --color-beacon-50: #fff8eb;
+  --color-beacon-100: #fdecc8;
+  --color-beacon-200: #fbd791;
+  --color-beacon-300: #f7bf5a;
+  --color-beacon-400: #f2a93b;
+  --color-beacon-500: #e08d1c;
+  --color-beacon-600: #c06f12;
+  --color-beacon-700: #974f12;
+
+  --color-ink-50: #f6f7fb;
+  --color-ink-100: #eceef5;
+  --color-ink-200: #d9dce8;
+  --color-ink-300: #b8bdd0;
+  --color-ink-400: #8a91aa;
+  --color-ink-500: #646b85;
+  --color-ink-600: #4b516a;
+  --color-ink-700: #373c51;
+  --color-ink-800: #23273a;
+  --color-ink-900: #161927;
+  --color-ink-950: #0d0f19;
+
+  --color-success-500: #1f9d63;
+  --color-success-100: #d6f5e6;
+  --color-warning-500: #d48a0b;
+  --color-warning-100: #fdf0d2;
+  --color-danger-500: #d64045;
+  --color-danger-100: #fbe0e1;
+  --color-info-500: #2f80c4;
+  --color-info-100: #dcecf9;
+
+  --radius-card: 1rem;
+  --shadow-card: 0 1px 2px rgb(13 15 25 / 0.06), 0 8px 24px -12px rgb(13 15 25 / 0.18);
+
+  --animate-blink: blink 1s step-end infinite;
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+}
+
+/* Role tokens: what a colour is FOR. Light and dark only differ here, so components stay theme-agnostic. */
+:root {
+  --bg: var(--color-ink-50);
+  --surface: #ffffff;
+  --surface-2: var(--color-ink-100);
+  --line: var(--color-ink-200);
+  --fg: var(--color-ink-900);
+  --fg-muted: var(--color-ink-500);
+  --primary: var(--color-brand-700);
+  --primary-hover: var(--color-brand-800);
+  --on-primary: #ffffff;
+  --accent: var(--color-beacon-400);
+  --on-accent: var(--color-ink-950);
+  --ring: var(--color-brand-400);
+  --bubble-user: var(--color-brand-700);
+  --on-bubble-user: #ffffff;
+  --bubble-bot: #ffffff;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: var(--color-ink-950);
+  --surface: var(--color-ink-900);
+  --surface-2: var(--color-ink-800);
+  --line: var(--color-ink-700);
+  --fg: var(--color-ink-50);
+  --fg-muted: var(--color-ink-400);
+  --primary: var(--color-brand-500);
+  --primary-hover: var(--color-brand-400);
+  --on-primary: #ffffff;
+  --accent: var(--color-beacon-300);
+  --on-accent: var(--color-ink-950);
+  --ring: var(--color-brand-300);
+  --bubble-user: var(--color-brand-600);
+  --on-bubble-user: #ffffff;
+  --bubble-bot: var(--color-ink-800);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-ring: var(--ring);
+  --color-bubble-user: var(--bubble-user);
+  --color-on-bubble-user: var(--on-bubble-user);
+  --color-bubble-bot: var(--bubble-bot);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-bg font-sans text-fg antialiased;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Markdown from the assistant: readable defaults without pulling in a typography plugin. */
+@layer components {
+  .prose-chat > * + * {
+    @apply mt-2;
+  }
+  .prose-chat ul {
+    @apply list-disc pl-5;
+  }
+  .prose-chat ol {
+    @apply list-decimal pl-5;
+  }
+  .prose-chat strong {
+    @apply font-semibold;
+  }
+  .prose-chat code {
+    @apply rounded bg-surface-2 px-1 py-0.5 font-mono text-[0.85em];
+  }
+  .prose-chat a {
+    @apply text-primary underline underline-offset-2;
+  }
+}

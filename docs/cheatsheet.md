@@ -232,6 +232,18 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `HnswConfigDiff(m=0, payload_m=16)` | Qdrant: global graph nahi, har company ka apna | `vector_bench.py` |
 | `QdrantClient(prefer_grpc=True, grpc_port=6334)` | REST ki jagah gRPC: laptop par 12 ms → 3.4 ms round trip | report |
 
+### 1N. Frontend (React)
+
+| Command / code | Kya karta hai | Kahan |
+|---|---|---|
+| `cd frontend && npm install && npm run dev` | http://localhost:5173, `/api` Django :8000 ko proxy | `vite.config.ts` |
+| `npm run typecheck` / `lint` / `build` | TS strict, ESLint, production build | `package.json` |
+| `authorizedFetch` | Bearer token; 401 par ek refresh, phir retry | `src/shared/api/http.ts` |
+| `streamSse` | SSE over fetch (POST + header) | `src/shared/api/sse.ts` |
+| `useChat` | token/reset/replace/confirmation events → store | `src/features/chat/controller/useChat.ts` |
+| `useTicketStream` | live timeline, Last-Event-ID se reconnect | `src/features/tickets/controller/useTickets.ts` |
+| Brand tokens | `brand`, `beacon`, `ink` + `bg/surface/fg/primary` | `src/styles/index.css` |
+
 ---
 
 ## 2. Kafka (dak-khana / post office)

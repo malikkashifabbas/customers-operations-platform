@@ -11,6 +11,7 @@ ANSWER_NODES = {"agent", "generate_answer"}
 
 def agent_events(stream: Iterable) -> Iterator[tuple[str, dict]]:
     multi_domain = False  # several specialists stream at once -> their tokens would interleave, so only compose streams
+    seen_calls: set[str] = set()  # a call shows up inside the specialist and again in the parent's update
     for item in stream:
         # subgraphs=True yields (namespace, mode, data); without it, (mode, data) from the top graph only.
         namespace, mode, data = item if len(item) == 3 else ((), *item)
@@ -21,7 +22,9 @@ def agent_events(stream: Iterable) -> Iterator[tuple[str, dict]]:
                 yield "token", {"text": chunk.content}
         elif mode == "updates":
             if namespace:
-                continue  # a step inside a specialist; the parent's specialist update already carries its new messages
+                # A write tool that pauses (interrupt) never finishes its specialist, so the parent update never comes.
+                yield from _new_tool_calls(data, seen_calls)
+                continue  # other steps inside a specialist: the parent's specialist update carries its messages
             for node, update in data.items():
                 if node == "__interrupt__":
                     continue  # a tuple of Interrupt objects, not a dict; the caller reads it from graph.get_state()
@@ -43,7 +46,22 @@ def agent_events(stream: Iterable) -> Iterator[tuple[str, dict]]:
                         if not multi_domain:
                             yield "token", {"text": msg.content}  # a specialist's fixed text (no LLM, so no tokens were streamed)
                     elif isinstance(msg, AIMessage):
-                        for call in msg.tool_calls:
-                            yield "tool_call", {"name": call["name"], "args": call["args"]}
+                        yield from _calls_once(msg, seen_calls)
                     elif isinstance(msg, ToolMessage):
                         yield "tool_result", {"name": msg.name, "content": msg.content[:500]}
+
+
+def _calls_once(message: AIMessage, seen: set[str]) -> Iterator[tuple[str, dict]]:
+    for call in message.tool_calls:
+        key = call.get("id") or f"{call['name']}:{call['args']}"
+        if key not in seen:
+            seen.add(key)
+            yield "tool_call", {"name": call["name"], "args": call["args"]}
+
+
+def _new_tool_calls(data: dict, seen: set[str]) -> Iterator[tuple[str, dict]]:
+    for update in data.values():
+        if isinstance(update, dict):
+            for msg in update.get("messages", []):
+                if isinstance(msg, AIMessage):
+                    yield from _calls_once(msg, seen)
