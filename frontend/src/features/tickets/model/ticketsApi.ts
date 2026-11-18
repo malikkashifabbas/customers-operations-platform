@@ -1,12 +1,13 @@
 import { http } from '@/shared/api/http'
 import { streamSse, type SseHandler } from '@/shared/api/sse'
 
-import type { Ticket } from './types'
+import type { Ticket, TicketDetail } from './types'
 
 export const ticketsApi = {
   list: () => http.get<Ticket[]>('/tickets/'),
-  get: (id: string) => http.get<Ticket>(`/tickets/${id}`),
+  get: (id: string) => http.get<TicketDetail>(`/tickets/${id}`),
   create: (body: { subject: string; body: string }) => http.post<Ticket>('/tickets/', body),
+  reply: (id: string, body: string) => http.post<TicketDetail>(`/tickets/${id}/messages`, { body }),
   stream: (id: string, signal: AbortSignal, onEvent: SseHandler, lastEventId?: string) =>
     streamSse(`/tickets/${id}/stream`, { method: 'GET', signal, onEvent, lastEventId }),
 }

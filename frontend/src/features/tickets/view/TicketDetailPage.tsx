@@ -1,19 +1,21 @@
-import { ArrowLeft, Bot, Radio } from 'lucide-react'
+import { ArrowLeft, Bot, Radio, UserRound } from 'lucide-react'
 import Markdown from 'react-markdown'
 import { Link, useParams } from 'react-router'
 
 import { friendlyMessage } from '@/shared/api/errors'
 import { cn } from '@/shared/lib/cn'
-import { formatDateTime } from '@/shared/lib/format'
+import { formatDateTime, formatRelative } from '@/shared/lib/format'
 import { Card, ErrorState, PageSpinner } from '@/shared/ui'
 
-import { useTicket, useTicketStream } from '../controller/useTickets'
-import type { TimelineEntry } from '../model/types'
+import { useReplyToTicket, useTicket, useTicketStream } from '../controller/useTickets'
+import type { TicketDetail, TicketMessage, TimelineEntry } from '../model/types'
+import { TicketReplyBox } from './TicketReplyBox'
 import { TicketStatusBadge } from './TicketStatusBadge'
 
 const DOT: Record<TimelineEntry['kind'], string> = {
   status: 'bg-info-500',
-  routing: 'bg-brand-500',
+  customer: 'bg-brand-500',
+  routing: 'bg-brand-300',
   tool: 'bg-ink-400',
   approval: 'bg-beacon-400',
   final: 'bg-success-500',
@@ -24,6 +26,7 @@ export default function TicketDetailPage() {
   const { ticketId = '' } = useParams()
   const ticket = useTicket(ticketId)
   const { timeline, live } = useTicketStream(ticket.data)
+  const reply = useReplyToTicket(ticketId)
 
   if (ticket.isPending) return <PageSpinner />
   if (ticket.isError) {
@@ -43,8 +46,8 @@ export default function TicketDetailPage() {
       </Link>
 
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t.subject}</h1>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight break-words">{t.subject}</h1>
           <p className="mt-1 text-sm text-fg-muted">Opened {formatDateTime(t.created_at)}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -57,10 +60,7 @@ export default function TicketDetailPage() {
         </div>
       </div>
 
-      <Card className="p-5">
-        <p className="text-xs font-medium tracking-wide text-fg-muted uppercase">Your message</p>
-        <p className="mt-2 text-sm whitespace-pre-wrap">{t.body}</p>
-      </Card>
+      <Conversation ticket={t} />
 
       {t.status === 'waiting_approval' && t.approval_request && (
         <div className="rounded-card border border-beacon-300 bg-beacon-50 p-4 text-sm dark:border-beacon-500/40 dark:bg-beacon-700/15">
@@ -69,20 +69,11 @@ export default function TicketDetailPage() {
         </div>
       )}
 
-      {t.reply && (
-        <Card className="p-5">
-          <p className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-fg-muted uppercase">
-            <Bot className="size-3.5" /> Reply
-          </p>
-          <div className="prose-chat mt-2 text-sm">
-            <Markdown>{t.reply}</Markdown>
-          </div>
-        </Card>
-      )}
+      <TicketReplyBox status={t.status} sending={reply.isPending} onSend={(body, done) => reply.mutate(body, { onSuccess: done })} />
 
       {timeline.length > 0 && (
-        <Card className="p-5">
-          <p className="text-xs font-medium tracking-wide text-fg-muted uppercase">Progress</p>
+        <details className="group rounded-card border border-line bg-surface p-5 shadow-card" open={live}>
+          <summary className="cursor-pointer text-xs font-medium tracking-wide text-fg-muted uppercase select-none">Activity</summary>
           <ol className="mt-3 space-y-3 border-l border-line pl-4">
             {timeline.map((entry) => (
               <li key={entry.id} className="relative text-sm">
@@ -91,8 +82,57 @@ export default function TicketDetailPage() {
               </li>
             ))}
           </ol>
-        </Card>
+        </details>
       )}
+    </div>
+  )
+}
+
+function Conversation({ ticket }: { ticket: TicketDetail }) {
+  const working = ticket.status === 'open'
+  return (
+    <Card className="space-y-4 p-5" aria-live="polite">
+      {ticket.messages.map((message) => (
+        <MessageRow key={message.public_id} message={message} />
+      ))}
+      {working && (
+        <div className="flex items-center gap-2 pl-11 text-sm text-fg-muted">
+          <span className="inline-flex gap-1" aria-hidden="true">
+            {[0, 150, 300].map((delay) => (
+              <span key={delay} className="size-1.5 animate-bounce rounded-full bg-fg-muted" style={{ animationDelay: `${delay}ms` }} />
+            ))}
+          </span>
+          The assistant is working on your ticket…
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function MessageRow({ message }: { message: TicketMessage }) {
+  const mine = message.author === 'customer'
+  return (
+    <div className="flex gap-3">
+      <span
+        className={cn(
+          'mt-0.5 grid size-8 shrink-0 place-items-center rounded-full',
+          mine ? 'bg-surface-2 text-fg-muted' : 'bg-brand-800 text-beacon-300 dark:bg-brand-700',
+        )}
+      >
+        {mine ? <UserRound className="size-4" /> : <Bot className="size-4.5" />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-fg-muted">
+          <span className="font-medium text-fg">{mine ? 'You' : 'Assistant'}</span> · {formatRelative(message.created_at)}
+        </p>
+        {mine ? (
+          <p className="mt-1 text-sm whitespace-pre-wrap break-words">{message.body}</p>
+        ) : (
+          <div className="prose-chat mt-1 text-sm break-words">
+            <Markdown>{message.body}</Markdown>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

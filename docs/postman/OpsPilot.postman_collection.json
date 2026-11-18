@@ -1204,7 +1204,75 @@
                 "{{ticketPublicId}}"
               ]
             },
-            "description": "`status`: `open` (waiting for the worker) → `answered` (with `reply` and `answered_at`) or `failed` (worker gave up after 3 attempts). 404 if the ticket belongs to another customer."
+            "description": "`status`: `open` (waiting for the worker) → `answered` (with `reply` and `answered_at`) or `failed` (worker gave up after 3 attempts). 404 if the ticket belongs to another customer. The response now includes `messages`: the whole conversation."
+          }
+        },
+        {
+          "name": "Reply to ticket (follow-up)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Which order were we talking about, and what was its amount?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tickets/{{ticketPublicId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tickets",
+                "{{ticketPublicId}}",
+                "messages"
+              ]
+            },
+            "description": "Follow-up on an answered or failed ticket: 202 and status open; the worker answers on the same thread, so the agent remembers the ticket. 409 TICKET_BUSY while the agent works, 409 TICKET_WAITING_APPROVAL while staff decide."
+          }
+        },
+        {
+          "name": "Reply while the agent works (expect 409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Sending again right away\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tickets/{{ticketPublicId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tickets",
+                "{{ticketPublicId}}",
+                "messages"
+              ]
+            },
+            "description": "Send right after 'Reply to ticket': the ticket is open, so the API refuses a second run (TICKET_BUSY)."
           }
         },
         {

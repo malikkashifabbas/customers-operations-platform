@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 
@@ -7,10 +7,11 @@ import { friendlyMessage } from '@/shared/api/errors'
 
 import type { NewTicketValues } from '../model/schemas'
 import { ticketKeys, ticketsApi } from '../model/ticketsApi'
-import type { Ticket, TimelineEntry } from '../model/types'
+import type { TicketDetail, TicketStatus, TimelineEntry } from '../model/types'
 
 const RECONNECT_MS = 2000
-const FINAL = new Set(['answered', 'failed'])
+const FINAL_EVENTS = new Set(['answered', 'failed'])
+const SETTLED: ReadonlySet<TicketStatus> = new Set(['answered', 'failed'])
 
 export function useTickets() {
   return useQuery({ queryKey: ticketKeys.list(), queryFn: ticketsApi.list, staleTime: 15_000 })
@@ -26,9 +27,23 @@ export function useCreateTicket() {
   return useMutation({
     mutationFn: (values: NewTicketValues) => ticketsApi.create(values),
     onSuccess: (ticket) => {
-      queryClient.setQueryData(ticketKeys.detail(ticket.public_id), ticket)
+      const firstMessage = { public_id: `${ticket.public_id}-first`, author: 'customer' as const, body: ticket.body, created_at: ticket.created_at }
+      queryClient.setQueryData<TicketDetail>(ticketKeys.detail(ticket.public_id), { ...ticket, messages: [firstMessage] })
       void queryClient.invalidateQueries({ queryKey: ticketKeys.list() })
       navigate(`/tickets/${ticket.public_id}`)
+    },
+    onError: (error) => toast.error(friendlyMessage(error)),
+  })
+}
+
+export function useReplyToTicket(id: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: string) => ticketsApi.reply(id, body),
+    // The 202 already carries the reopened ticket: status "open" restarts the live stream without another request.
+    onSuccess: (ticket) => {
+      queryClient.setQueryData(ticketKeys.detail(id), ticket)
+      void queryClient.invalidateQueries({ queryKey: ticketKeys.list() })
     },
     onError: (error) => toast.error(friendlyMessage(error)),
   })
@@ -38,6 +53,8 @@ function describe(event: string, data: Record<string, unknown>): Omit<TimelineEn
   switch (event) {
     case 'processing':
       return { kind: 'status', text: 'The assistant picked up your ticket' }
+    case 'customer_message':
+      return { kind: 'customer', text: 'You replied' }
     case 'routing':
       return { kind: 'routing', text: `Specialists: ${(data.domains as string[]).join(', ')}` }
     case 'tool_call':
@@ -56,45 +73,50 @@ function describe(event: string, data: Record<string, unknown>): Omit<TimelineEn
 }
 
 /** Live progress of one ticket; reconnects with Last-Event-ID so nothing is missed or shown twice. */
-export function useTicketStream(ticket: Ticket | undefined) {
+export function useTicketStream(ticket: TicketDetail | undefined) {
   const queryClient = useQueryClient()
   const [timeline, setTimeline] = useState<TimelineEntry[]>([])
   const [live, setLive] = useState(false)
+  // Kept across runs: after a follow-up the stream resumes after the last event instead of replaying the old answer.
+  const lastEventIdRef = useRef<string | undefined>(undefined)
+  const statusRef = useRef<TicketStatus | undefined>(ticket?.status)
   const id = ticket?.public_id
-  const finished = !ticket || FINAL.has(ticket.status)
+  const settled = !ticket || SETTLED.has(ticket.status)
 
   useEffect(() => {
-    if (!id || finished) return
+    statusRef.current = ticket?.status
+  }, [ticket?.status])
+
+  useEffect(() => {
+    if (!id || settled) return
     const controller = new AbortController()
-    let lastEventId: string | undefined
-    let done = false
 
     const onEvent = (event: string, raw: unknown, eventId: string | undefined) => {
-      if (eventId) lastEventId = eventId
+      if (eventId) lastEventIdRef.current = eventId
       const data = (raw ?? {}) as Record<string, unknown>
       const entry = describe(event, data)
-      if (entry) setTimeline((items) => [...items, { ...entry, id: eventId ?? `${event}-${items.length}`, at: Date.now() }])
-      if (FINAL.has(event) || event === 'approval_required') {
-        done = event !== 'approval_required'
-        void queryClient.invalidateQueries({ queryKey: ticketKeys.all })
-      }
+      // The same Redis event can arrive twice (dev double-mount, reconnect replay); its stream id shows it once.
+      if (entry) setTimeline((items) => (eventId && items.some((i) => i.id === eventId) ? items : [...items, { ...entry, id: eventId ?? `${event}-${items.length}`, at: Date.now() }]))
+      // A refetch tells whether this final event is the newest one; the status change then stops the stream.
+      if (FINAL_EVENTS.has(event) || event === 'approval_required') void queryClient.invalidateQueries({ queryKey: ticketKeys.all })
     }
 
     const run = async () => {
-      while (!controller.signal.aborted && !done) {
+      while (!controller.signal.aborted) {
         setLive(true)
         try {
-          await ticketsApi.stream(id, controller.signal, onEvent, lastEventId)
+          await ticketsApi.stream(id, controller.signal, onEvent, lastEventIdRef.current)
         } catch {
           if (controller.signal.aborted) return
         }
         setLive(false)
-        if (!done) await new Promise((resolve) => setTimeout(resolve, RECONNECT_MS))
+        if (statusRef.current && SETTLED.has(statusRef.current)) return
+        await new Promise((resolve) => setTimeout(resolve, RECONNECT_MS))
       }
     }
     void run()
     return () => controller.abort()
-  }, [id, finished, queryClient])
+  }, [id, settled, queryClient])
 
-  return { timeline, live: live && !finished }
+  return { timeline, live: live && !settled }
 }

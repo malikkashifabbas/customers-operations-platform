@@ -6,7 +6,14 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from .topics import KNOWLEDGE_CHUNKS_CHANGED, ORDERS_CANCELLED, TICKETS_ANSWERED, TICKETS_APPROVAL_DECIDED, TICKETS_CREATED
+from .topics import (
+    KNOWLEDGE_CHUNKS_CHANGED,
+    ORDERS_CANCELLED,
+    TICKETS_ANSWERED,
+    TICKETS_APPROVAL_DECIDED,
+    TICKETS_CREATED,
+    TICKETS_MESSAGE_ADDED,
+)
 
 
 class Event(BaseModel):
@@ -29,6 +36,12 @@ class TicketAnsweredV1(Event):
 class TicketApprovalDecidedV1(Event):
     event_type: Literal["tickets.approval_decided"] = TICKETS_APPROVAL_DECIDED
     ticket_public_id: str
+
+
+class TicketMessageAddedV1(Event):
+    event_type: Literal["tickets.message_added"] = TICKETS_MESSAGE_ADDED
+    ticket_public_id: str
+    message_public_id: str
 
 
 class OrderCancelledV1(Event):

@@ -9,7 +9,7 @@ from apps.accounts.auth import CustomerJWT
 from infra.observability.tracing import label_span, trace_span
 
 from . import selectors, services
-from .schemas import TicketIn, TicketOut
+from .schemas import FollowUpIn, TicketDetailOut, TicketIn, TicketOut
 from .streams import resume_from, ticket_events
 
 router = Router(tags=["tickets"], auth=CustomerJWT())
@@ -30,9 +30,18 @@ def list_tickets(request):
     return selectors.list_tickets_for_customer(tenant=request.auth.tenant, customer=request.auth.customer)
 
 
-@router.get("/{public_id}", response=TicketOut)
+@router.get("/{public_id}", response=TicketDetailOut)
 def get_ticket(request, public_id: UUID):
-    return selectors.get_ticket_for_customer(tenant=request.auth.tenant, customer=request.auth.customer, public_id=public_id)
+    return selectors.get_ticket_with_messages(tenant=request.auth.tenant, customer=request.auth.customer, public_id=public_id)
+
+
+@router.post("/{public_id}/messages", response={202: TicketDetailOut})
+def add_message(request, public_id: UUID, payload: FollowUpIn):
+    ticket = selectors.get_ticket_for_customer(tenant=request.auth.tenant, customer=request.auth.customer, public_id=public_id)
+    with trace_span("POST /tickets/messages", metadata={"tenant": request.auth.tenant.slug}):
+        services.add_follow_up(ticket=ticket, body=payload.body)
+        label_span(session_id=f"ticket-{ticket.public_id}", ticket_public_id=str(ticket.public_id))
+    return 202, selectors.get_ticket_with_messages(tenant=request.auth.tenant, customer=request.auth.customer, public_id=public_id)
 
 
 @router.get("/{public_id}/stream")

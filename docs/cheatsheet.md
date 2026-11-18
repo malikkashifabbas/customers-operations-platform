@@ -244,6 +244,16 @@ Har line: **kya likhte hain → kya karti hai → hamare project mein kahan.** R
 | `useTicketStream` | live timeline, Last-Event-ID se reconnect | `src/features/tickets/controller/useTickets.ts` |
 | Brand tokens | `brand`, `beacon`, `ink` + `bg/surface/fg/primary` | `src/styles/index.css` |
 
+### 1O. Ticket follow-ups
+
+| Code | Kya karta hai | Kahan |
+|---|---|---|
+| `POST /api/tickets/{id}/messages` | Follow-up → 202, status `open` | `apps/tickets/api.py` |
+| `add_follow_up` | Row lock + message + outbox event, ek transaction | `apps/tickets/services/tickets.py` |
+| `tickets.message_added` | Worker wahi thread par agent chalata hai | `workers/handlers/tickets.py::handle_message_added` |
+| `_reopened` | Purane `answered` par stream band nahi | `apps/tickets/streams.py` |
+| `TicketReplyBox` | Reply box (open/waiting par band) | `frontend/src/features/tickets/view/` |
+
 ---
 
 ## 2. Kafka (dak-khana / post office)

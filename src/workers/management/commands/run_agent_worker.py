@@ -7,7 +7,7 @@ from django.core.management.base import BaseCommand
 from pydantic import ValidationError
 
 from infra.cache import idempotency
-from infra.eventbus.events import KnowledgeChunksChangedV1, TicketApprovalDecidedV1, TicketCreatedV1
+from infra.eventbus.events import KnowledgeChunksChangedV1, TicketApprovalDecidedV1, TicketCreatedV1, TicketMessageAddedV1
 from infra.eventbus.kafka import make_consumer, make_producer
 from infra.eventbus.topics import (
     KNOWLEDGE_CHUNKS_CHANGED,
@@ -16,10 +16,12 @@ from infra.eventbus.topics import (
     TICKETS_APPROVAL_DECIDED_DLQ,
     TICKETS_CREATED,
     TICKETS_CREATED_DLQ,
+    TICKETS_MESSAGE_ADDED,
+    TICKETS_MESSAGE_ADDED_DLQ,
 )
 from infra.observability.tracing import record_span, trace_span
 from workers.handlers.knowledge import handle_chunks_changed
-from workers.handlers.tickets import PermanentEventError, handle_approval_decided, handle_ticket_created, mark_failed
+from workers.handlers.tickets import PermanentEventError, handle_approval_decided, handle_message_added, handle_ticket_created, mark_failed
 
 GROUP_ID = "agent-workers"
 MAX_ATTEMPTS = 3
@@ -28,6 +30,7 @@ MAX_ATTEMPTS = 3
 ROUTES = {
     TICKETS_CREATED: (TicketCreatedV1, handle_ticket_created, TICKETS_CREATED_DLQ),
     TICKETS_APPROVAL_DECIDED: (TicketApprovalDecidedV1, handle_approval_decided, TICKETS_APPROVAL_DECIDED_DLQ),
+    TICKETS_MESSAGE_ADDED: (TicketMessageAddedV1, handle_message_added, TICKETS_MESSAGE_ADDED_DLQ),
     KNOWLEDGE_CHUNKS_CHANGED: (KnowledgeChunksChangedV1, handle_chunks_changed, KNOWLEDGE_CHUNKS_CHANGED_DLQ),
 }
 

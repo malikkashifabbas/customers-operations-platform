@@ -18,7 +18,7 @@ from apps.tickets.models import Ticket, TicketStatus
 from core.limits import TICKET_LOCK_SECONDS
 from infra.cache import keys, streams
 from infra.cache.locks import redis_lock
-from infra.eventbus.events import TicketApprovalDecidedV1, TicketCreatedV1
+from infra.eventbus.events import TicketApprovalDecidedV1, TicketCreatedV1, TicketMessageAddedV1
 from infra.observability.tracing import trace_config
 
 logger = logging.getLogger(__name__)
@@ -80,6 +80,26 @@ def handle_approval_decided(event: TicketApprovalDecidedV1) -> str:
         return _run(ticket, Command(resume=resume))
 
 
+def handle_message_added(event: TicketMessageAddedV1) -> str:
+    ticket = selectors.get_ticket_for_event(
+        tenant_public_id=event.tenant_public_id, ticket_public_id=event.ticket_public_id
+    )
+    if ticket is None:
+        raise PermanentEventError(f"ticket {event.ticket_public_id} not found for tenant {event.tenant_public_id}")
+    message = selectors.get_message_for_event(ticket=ticket, message_public_id=event.message_public_id)
+    if message is None:
+        raise PermanentEventError(f"message {event.message_public_id} not found on ticket {event.ticket_public_id}")
+    if message.answered_at is not None or ticket.status != TicketStatus.OPEN:
+        return f"skipped: message already answered (ticket {ticket.status})"
+
+    with redis_lock(f"ticket:{ticket.public_id}", TICKET_LOCK_SECONDS) as acquired:
+        if not acquired:
+            return "skipped: another worker is answering this ticket"
+        _publish(ticket, "customer_message", {"message_public_id": str(message.public_id)})
+        # Same thread as the first run, so the agent remembers the whole ticket from the Postgres checkpointer.
+        return _run(ticket, {"messages": [HumanMessage(message.body)]})
+
+
 def _config(ticket: Ticket) -> dict:
     return {"configurable": {"thread_id": f"{ticket.tenant.public_id}:{ticket.customer.public_id}:ticket-{ticket.public_id}"}}
 
@@ -119,7 +139,7 @@ def _run(ticket: Ticket, graph_input) -> str:
     return f"answered ({len(reply)} chars)"
 
 
-def mark_failed(event: TicketCreatedV1 | TicketApprovalDecidedV1) -> None:
+def mark_failed(event: TicketCreatedV1 | TicketApprovalDecidedV1 | TicketMessageAddedV1) -> None:
     ticket = selectors.get_ticket_for_event(
         tenant_public_id=event.tenant_public_id, ticket_public_id=event.ticket_public_id
     )

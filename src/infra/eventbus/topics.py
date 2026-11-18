@@ -5,6 +5,8 @@ TICKETS_ANSWERED = "tickets.answered"
 TICKETS_CREATED_DLQ = "tickets.created.dlq"
 TICKETS_APPROVAL_DECIDED = "tickets.approval_decided"
 TICKETS_APPROVAL_DECIDED_DLQ = "tickets.approval_decided.dlq"
+TICKETS_MESSAGE_ADDED = "tickets.message_added"
+TICKETS_MESSAGE_ADDED_DLQ = "tickets.message_added.dlq"
 ORDERS_CANCELLED = "orders.cancelled"
 KNOWLEDGE_CHUNKS_CHANGED = "knowledge.chunks_changed"
 KNOWLEDGE_CHUNKS_CHANGED_DLQ = "knowledge.chunks_changed.dlq"
@@ -16,6 +18,8 @@ TOPICS = {
     TICKETS_CREATED_DLQ: 1,
     TICKETS_APPROVAL_DECIDED: 3,
     TICKETS_APPROVAL_DECIDED_DLQ: 1,
+    TICKETS_MESSAGE_ADDED: 3,
+    TICKETS_MESSAGE_ADDED_DLQ: 1,
     ORDERS_CANCELLED: 3,
     KNOWLEDGE_CHUNKS_CHANGED: 3,
     KNOWLEDGE_CHUNKS_CHANGED_DLQ: 1,

@@ -2,7 +2,7 @@
 
 from ninja import Field, ModelSchema, Schema
 
-from .models import Ticket
+from .models import Ticket, TicketMessage
 
 
 class TicketIn(Schema):
@@ -14,6 +14,20 @@ class TicketOut(ModelSchema):
     class Meta:
         model = Ticket
         fields = ["public_id", "subject", "body", "status", "reply", "approval_request", "created_at", "answered_at"]
+
+
+class TicketMessageOut(ModelSchema):
+    class Meta:
+        model = TicketMessage
+        fields = ["public_id", "author", "body", "created_at"]
+
+
+class TicketDetailOut(TicketOut):
+    messages: list[TicketMessageOut]
+
+
+class FollowUpIn(Schema):
+    body: str = Field(min_length=1, max_length=5000)
 
 
 class StaffTicketOut(ModelSchema):

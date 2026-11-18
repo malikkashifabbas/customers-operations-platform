@@ -24,6 +24,8 @@ INPUT_GUARD_PROMPT = Path(__file__).parent / "prompts" / "input_guard.v1.md"
 
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 PHONE_RE = re.compile(r"\+?\d[\d\s-]{7,}\d")
+# "Zap ID: 356830636" or "order #123456789" is a reference, not a phone (ticket 5da977d7 was refused for it).
+ID_LABEL_RE = re.compile(r"\b(id|ids|order|ticket|zap|tracking|ref|reference|invoice|transaction|txn)(\s+(id|no|number|code))?\W{0,3}$|#\s*$", re.IGNORECASE)
 URL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
 ORDER_RE = re.compile(r"\bORD-\d+\b", re.IGNORECASE)
 # Steps and screens that do not exist; the documents only say "from your account" (open list #1: "Create Ticket option").
@@ -103,7 +105,15 @@ def mentions_other_person(message: str, customer: Customer) -> bool:
     if any(email.lower() != own_email for email in EMAIL_RE.findall(message)):
         return True
     own_phone = _digits(customer.phone)[-9:]
-    return any(_digits(phone)[-9:] != own_phone for phone in PHONE_RE.findall(message) if len(_digits(phone)) >= 9)
+    return any(_digits(match.group())[-9:] != own_phone for match in PHONE_RE.finditer(message) if _looks_like_phone(match, message))
+
+
+def _looks_like_phone(match: re.Match, message: str) -> bool:
+    """Phone-shaped: starts with + or 0, or has 10+ digits; and no id label (Zap ID:, #) right before it."""
+    digits = _digits(match.group())
+    if len(digits) < 9 or ID_LABEL_RE.search(message[max(0, match.start() - 20) : match.start()]):
+        return False
+    return match.group().startswith(("+", "0")) or len(digits) >= 10
 
 
 def classify_input(

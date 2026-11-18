@@ -40,9 +40,15 @@ def ticket_events(ticket: Ticket, after_id: str = "0") -> Iterator[str]:
         for entry_id, event, data in entries:
             after_id = entry_id
             yield sse(event, data, event_id=entry_id)
-            if event in FINAL_EVENTS or (event == PAUSE_EVENT and _still_waiting(ticket)):
+            if (event in FINAL_EVENTS and not _reopened(ticket)) or (event == PAUSE_EVENT and _still_waiting(ticket)):
                 return
     yield sse("timeout", {"message": "No update yet; reconnect or fetch the ticket again later."})
+
+
+def _reopened(ticket: Ticket) -> bool:
+    # A replayed old "answered" is not the end when a follow-up reopened the ticket: the new run's events follow it.
+    ticket.refresh_from_db(fields=["status"])
+    return ticket.status == TicketStatus.OPEN
 
 
 def _still_waiting(ticket: Ticket) -> bool:

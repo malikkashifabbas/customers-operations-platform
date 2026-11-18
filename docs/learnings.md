@@ -1684,3 +1684,21 @@ pgvector ne `broken earrings return` par *Damaged* section chhoda; Qdrant ke BM2
 
 **Frontend testing se pakda (5 Nov):** pending order cancel ki stream mein `tool_call` nahi tha, is liye DebugPanel "No tools used" dikhata. Wajah: `agent_events` specialist ke andar ke updates chhod deta tha, aur interrupt mein specialist node khatam hi nahi hota, is liye parent ka update kabhi nahi aata. Ab `tool_call` andar ke update se bhi aata hai, aur call id se ek hi dafa (`streaming.py::_calls_once`). Asli API par: naam badalne ki stream `start → routing → tool_call → confirmation_required → done`, aur "List my orders" mein `list_my_orders` sirf ek dafa. Ticket ki live timeline ko bhi fayda, kyun ke worker yahi function use karta hai.
 
+**Frontend testing se do aur bug (5 Nov):**
+1. **Guard ka false positive:** ticket "Zap ID: 356830636" par privacy refusal aayi. `mentions_other_person` LLM se pehle 9+ hindson wala har number phone samajhta tha. Ab number phone tab hai jab `+` ya `0` se shuru ho ya 10+ hindse hon, aur us se pehle "ID / order / tracking (number) / invoice / #" jaisa label na ho (`guards.ID_LABEL_RE`, `_looks_like_phone`). "number" khud label nahi, warna "bhai ka number 0300…" chhoot jata. 15/15 cases; triage asli LLM par: Zap ticket → knowledge, "order #123456789" → billing, bhai ka number → other_customer. lesson12 15/16 (fail sirf data ki wajah se: ORD-1003 manual test mein cancel ho chuka).
+2. **Timeline mein event do dafa:** Redis mein har event ek dafa tha, is liye frontend ab Redis stream id se ek hi dafa jodta hai.
+
+**Not implemented (bug nahi):** ticket par follow-up message. Ticket ek dafa ka sawal-jawab hai; agent ka thread (`ticket-<id>`, Postgres) tayyar hai, magar API, event aur worker handler nahi bane.
+
+## Learning 36: Ticket follow-ups — wahi thread, naya darwaza
+
+**Masla:** ticket ek dafa ka sawal-jawab tha; customer aage baat nahi kar sakta tha.
+
+**Kya bana:**
+- `TicketMessage` (customer / assistant, `answered_at`); migration ne purane 40 tickets ke `body` + `reply` bhi messages bana diye. `Ticket.reply` ab bhi aakhri jawab rakhta hai, taa ke purana code chalta rahe.
+- `POST /api/tickets/{id}/messages` → 202. `add_follow_up`: row lock, phir message + status `open` + outbox `tickets.message_added`, ek transaction mein. 409 `TICKET_BUSY` (agent kaam kar raha hai), 409 `TICKET_WAITING_APPROVAL` (staff ka faisla), 409 `FOLLOW_UP_LIMIT_REACHED` (20), 429 (10/minute).
+- Worker `handle_message_added`: wahi lock aur wahi `_run`, **wahi thread** (`…:ticket-<id>`, Postgres checkpointer), is liye agent ko poora ticket yaad hai. Dobara aaya event `answered_at` dekh kar skip.
+- **Stream ki gotcha:** replay purane `answered` par ruk jata. `_reopened` (jaise `_still_waiting`): final event par tab hi band karo jab ticket ab `open` na ho. Frontend bhi purane final event par nahi rukta; ticket ka status (refetch) stream band karta hai, aur `Last-Event-ID` ref follow-up ke baad wahin se jodta hai.
+
+**Tests:** bina LLM 12/12 (409s, doosra customer 404, 401, 422, idempotency, stream, had, backfill). Asli LLM 5/5: pehla sawal ORD-1002, follow-up "kaun sa order aur kitne ka?" → "We were discussing order ORD-1002, which is for 120.00 USD".
+

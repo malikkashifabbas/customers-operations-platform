@@ -7,11 +7,19 @@ from django.shortcuts import get_object_or_404
 from apps.customers.models import Customer
 from core.models import Tenant
 
-from .models import Ticket, TicketStatus
+from .models import Ticket, TicketMessage, TicketStatus
 
 
 def get_ticket_for_customer(*, tenant: Tenant, customer: Customer, public_id: UUID) -> Ticket:
     return get_object_or_404(Ticket, tenant=tenant, customer=customer, public_id=public_id)
+
+
+def get_ticket_with_messages(*, tenant: Tenant, customer: Customer, public_id: UUID) -> Ticket:
+    return get_object_or_404(Ticket.objects.prefetch_related("messages"), tenant=tenant, customer=customer, public_id=public_id)
+
+
+def get_message_for_event(*, ticket: Ticket, message_public_id: str) -> TicketMessage | None:
+    return ticket.messages.filter(public_id=message_public_id).first()
 
 
 def list_tickets_for_customer(*, tenant: Tenant, customer: Customer, limit: int = 50) -> list[Ticket]:
