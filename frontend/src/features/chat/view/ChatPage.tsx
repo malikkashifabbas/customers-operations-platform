@@ -14,6 +14,7 @@ import { MessageList } from './MessageList'
 
 export default function ChatPage() {
   const { conversationId } = useParams()
+  
   // Remount per conversation so streaming state never leaks from one chat into another.
   if (!conversationId) return <Navigate to={`/chat/${newId('c')}`} replace />
   return <ChatScreen key={conversationId} conversationId={conversationId} />

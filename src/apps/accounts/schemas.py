@@ -7,7 +7,7 @@ from pydantic import EmailStr
 
 
 class CustomerLoginIn(Schema):
-    tenant_public_id: UUID  # phone is unique per company only: the same number can be a customer of two companies
+    tenant_public_id: UUID  # phone is unique per company only:  same number can be customer of two companies
     phone: str = Field(min_length=7, max_length=32)
     password: str = Field(min_length=1, max_length=128)
 
